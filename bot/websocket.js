@@ -1,14 +1,68 @@
-/**
- * Manejo de conexiones WebSocket.
- * Aquí se implementará la conexión a Binance y la lógica de reconexión.
- */
 const WebSocket = require('ws');
+const simulator = require('./simulator');
+const state = require('./state');
 
-// Funciones placeholder para ser desarrolladas en el Prompt 03.
+let wsClient = null;
+
 function connectToBinance() {
-    console.log('[WS] Función connectToBinance (Placeholder)');
+    if (wsClient) return;
+
+    const streams = 'btcusdt@kline_1m/btcusdt@kline_5m';
+    const wsUrl = `wss://stream.binance.com:9443/stream?streams=${streams}`;
+
+    wsClient = new WebSocket(wsUrl);
+
+    wsClient.on('open', () => {
+        console.log('[WS] Conectado a Binance Streams.');
+        state.events.emit('log', '> WebSocket conectado. Escuchando klines de 1m y 5m...');
+    });
+
+    wsClient.on('message', (data) => {
+        try {
+            const payload = JSON.parse(data);
+            if (!payload.data || !payload.data.k) return;
+
+            const klineData = payload.data.k;
+            const kline = {
+                symbol: klineData.s,
+                interval: klineData.i,
+                close: klineData.c,
+                isClosed: klineData.x
+            };
+
+            simulator.processTick(kline);
+        } catch (error) {
+            console.error('[WS] Error parseando mensaje:', error);
+        }
+    });
+
+    wsClient.on('error', (err) => {
+        console.error('[WS] Error:', err);
+        state.events.emit('log', `> [WS ERROR] ${err.message}`);
+    });
+
+    wsClient.on('close', () => {
+        console.log('[WS] Conexión cerrada.');
+        wsClient = null;
+        
+        // Auto-reconexión si el bot sigue corriendo
+        if (state.isBotRunning) {
+            console.log('[WS] Reconectando en 5s...');
+            setTimeout(connectToBinance, 5000);
+        }
+    });
+}
+
+function disconnectFromBinance() {
+    if (wsClient) {
+        // Para no auto-reconectar, aseguramos que el estado esté apagado antes de llamar aquí
+        wsClient.close();
+        wsClient = null;
+        console.log('[WS] Desconectado manualmente.');
+    }
 }
 
 module.exports = {
-    connectToBinance
+    connectToBinance,
+    disconnectFromBinance
 };

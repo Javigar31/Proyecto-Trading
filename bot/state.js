@@ -1,13 +1,28 @@
-/**
- * Estado global del bot. 
- * Se utiliza un singleton para que cualquier módulo pueda acceder y modificar
- * el estado en tiempo real sin perder sincronización.
- */
+const EventEmitter = require('events');
 
-const state = {
-    isBotRunning: false,
-    virtualBalance: 100.0,
-    // Aquí se agregarán más variables de estado como posiciones abiertas, precios, etc. en fases posteriores.
-};
+class BotState extends EventEmitter {
+    constructor() {
+        super();
+        this.isBotRunning = false;
+        
+        // Cuentas Paper Trading
+        this.virtualBalance = 100.0;
+        
+        // Estado de posición
+        this.isPositionOpen = false;
+        this.buyPrice = 0;
+        this.investedCrypto = 0; // Cantidad de crypto poseída tras descontar la fee de compra
+        
+        // Indicadores (se almacenan aquí para ser consultados por logs)
+        this.indicators = {
+            rsi1m: null,
+            bollingerLower1m: null,
+            ema200_5m: null,
+            currentPrice: null
+        };
+    }
+}
 
+// Singleton exportado
+const state = new BotState();
 module.exports = state;
