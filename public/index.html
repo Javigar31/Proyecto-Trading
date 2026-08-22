@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Trading Bot Dashboard</title>
     <link rel="stylesheet" href="styles.css">
+    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
     <div class="dashboard-layout">
@@ -50,6 +51,14 @@
                         <span class="stat-value neutral" id="pnl-val">0.00%</span>
                     </div>
                 </div>
+            </section>
+
+            <!-- Chart Panel -->
+            <section class="glass-panel chart-panel">
+                <div class="terminal-header">
+                    <h3>Gráfica en Tiempo Real (BTC/USDT)</h3>
+                </div>
+                <div id="tv-chart"></div>
             </section>
 
             <!-- Holographic Terminal Placeholder (Para el Prompt 04) -->

@@ -10,7 +10,7 @@ class Simulator {
 
     async warmup() {
         console.log('[SIMULATOR] Iniciando fase de Warmup...');
-        state.events.emit('log', '> Descargando historial de velas para indicadores...');
+        state.emit('log', '> Descargando historial de velas para indicadores...');
         
         try {
             // Descargar 50 velas de 1m y 250 velas de 5m en paralelo
@@ -21,10 +21,10 @@ class Simulator {
             
             indicators.initBuffers(klines1m, klines5m);
             console.log(`[SIMULATOR] Warmup completado. Velas 1m: ${klines1m.length}, Velas 5m: ${klines5m.length}`);
-            state.events.emit('log', '> Warmup completado con éxito. Indicadores listos.');
+            state.emit('log', '> Warmup completado con éxito. Indicadores listos.');
         } catch (error) {
             console.error('[SIMULATOR] Error en warmup:', error);
-            state.events.emit('log', `> ERROR en warmup: ${error.message}`);
+            state.emit('log', `> ERROR en warmup: ${error.message}`);
             throw error; // Re-lanzar para manejar en server.js
         }
     }
@@ -55,6 +55,17 @@ class Simulator {
 
         // Evaluar estrategia
         if (rsi && bollinger && ema200) {
+            // Heartbeat de mercado (Logs solo al cerrar)
+            if (kline.interval === '1m' && kline.isClosed) {
+                state.emit('log', `> [MERCADO] Precio: ${currentPrice.toFixed(2)} | RSI: ${rsi.toFixed(2)} | BB inf: ${bollinger.lower.toFixed(2)} | EMA200: ${ema200.toFixed(2)}`);
+            }
+            
+            // Enviar a la gráfica en cada tick para tiempo real
+            if (kline.interval === '1m') {
+                const candleTime = Math.floor(Date.now() / 60000) * 60;
+                state.emit('chart_data', { time: candleTime, price: currentPrice, signal: 'WAITING' });
+            }
+
             this.evaluateStrategy(currentPrice, rsi, bollinger.lower, ema200);
         }
     }
@@ -91,7 +102,9 @@ class Simulator {
         state.buyPrice = price;
         state.investedCrypto = cryptoAmount;
         
-        state.events.emit('log', `[COMPRA] Precio: ${price} | Fee: ${fee} USDT | Invertido neto: ${investedUSDT} USDT`);
+        state.emit('log', `[COMPRA] Precio: ${price} | Fee: ${fee} USDT | Invertido neto: ${investedUSDT} USDT`);
+        const candleTime = Math.floor(Date.now() / 60000) * 60;
+        state.emit('chart_data', { time: candleTime, price: price, signal: 'BUY' });
     }
 
     executeSell(price, netReturn, reason) {
@@ -101,8 +114,12 @@ class Simulator {
         const profit = netReturn - 100.0; 
         state.virtualBalance += profit;
 
-        state.events.emit('log', `[${reason}] Precio Venta: ${price} | Retorno Neto: ${netReturn.toFixed(2)} USDT | Profit: ${profit.toFixed(2)} USDT`);
-        state.events.emit('log', `> Nuevo Balance Total: ${state.virtualBalance.toFixed(2)} USDT`);
+        state.emit('log', `[${reason}] Precio Venta: ${price} | Retorno Neto: ${netReturn.toFixed(2)} USDT | Profit: ${profit.toFixed(2)} USDT`);
+        state.emit('log', `> Nuevo Balance Total: ${state.virtualBalance.toFixed(2)} USDT`);
+        
+        const signal = reason === 'TAKE PROFIT' ? 'SELL_TP' : 'SELL_SL';
+        const candleTime = Math.floor(Date.now() / 60000) * 60;
+        state.emit('chart_data', { time: candleTime, price: price, signal: signal });
 
         state.isPositionOpen = false;
         state.buyPrice = 0;

@@ -24,6 +24,8 @@ class DashboardController {
     init() {
         this.btnToggle.addEventListener('click', () => this.handleToggle());
         this.updateUI();
+        
+        this.chartController = new ChartController('tv-chart');
         this.initTerminal();
     }
 
@@ -35,7 +37,12 @@ class DashboardController {
 
         eventSource.onmessage = (event) => {
             const data = JSON.parse(event.data);
-            this.appendLog(data.message);
+            if (data.message) {
+                this.appendLog(data.message);
+            }
+            if (data.chart) {
+                this.chartController.update(data.chart);
+            }
         };
 
         eventSource.onerror = (error) => {
@@ -148,7 +155,70 @@ class DashboardController {
     }
 }
 
-// Inicialización cuando el DOM esté listo
+class ChartController {
+    constructor(containerId) {
+        this.container = document.getElementById(containerId);
+        
+        this.chart = LightweightCharts.createChart(this.container, {
+            layout: {
+                background: { type: 'solid', color: 'transparent' },
+                textColor: '#94a3b8',
+            },
+            grid: {
+                vertLines: { visible: false },
+                horzLines: { visible: false },
+            },
+            crosshair: {
+                mode: LightweightCharts.CrosshairMode.Normal,
+            },
+            rightPriceScale: {
+                borderColor: '#334155',
+            },
+            timeScale: {
+                borderColor: '#334155',
+                timeVisible: true,
+                secondsVisible: true,
+            },
+        });
+
+        this.series = this.chart.addLineSeries({
+            color: '#3b82f6',
+            lineWidth: 2,
+            crosshairMarkerVisible: true,
+            crosshairMarkerRadius: 4,
+            lineType: 0, // Solid
+        });
+
+        this.markers = [];
+        
+        // Resize observer para la gráfica
+        new ResizeObserver(entries => {
+            if (entries.length === 0 || entries[0].target !== this.container) { return; }
+            const newRect = entries[0].contentRect;
+            this.chart.applyOptions({ height: newRect.height, width: newRect.width });
+        }).observe(this.container);
+    }
+
+    update(data) {
+        // data: { time, price, signal }
+        this.series.update({ time: data.time, value: data.price });
+
+        if (data.signal !== 'WAITING') {
+            let marker = {
+                time: data.time,
+                position: data.signal === 'BUY' ? 'belowBar' : 'aboveBar',
+                color: data.signal === 'SELL_SL' ? '#ef4444' : '#22c55e',
+                shape: data.signal === 'BUY' ? 'arrowUp' : 'arrowDown',
+                text: data.signal === 'BUY' ? 'BUY' : (data.signal === 'SELL_TP' ? 'TP' : 'SL'),
+                size: 2
+            };
+            this.markers.push(marker);
+            this.series.setMarkers(this.markers);
+        }
+    }
+}
+
+// Inicializar el controlador principal
 document.addEventListener('DOMContentLoaded', () => {
-    new DashboardController();
+    window.app = new DashboardController();
 });

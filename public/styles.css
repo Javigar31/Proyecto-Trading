@@ -112,6 +112,20 @@ body {
     grid-column: span 12;
 }
 
+.chart-panel {
+    grid-column: span 12;
+    display: flex;
+    flex-direction: column;
+}
+
+#tv-chart {
+    flex-grow: 1;
+    min-height: 400px;
+    width: 100%;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
 .terminal-panel {
     grid-column: span 12;
     grid-row: span 2;

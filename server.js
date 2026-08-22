@@ -87,13 +87,19 @@ app.get('/api/logs', (req, res) => {
         res.write(`data: ${JSON.stringify({ message })}\n\n`);
     };
 
+    const onChart = (data) => {
+        res.write(`data: ${JSON.stringify({ chart: data })}\n\n`);
+    };
+
     // Suscribir al EventEmitter del estado global
-    state.events.on('log', onLog);
+    state.on('log', onLog);
+    state.on('chart_data', onChart);
     res.write(`data: ${JSON.stringify({ message: '> Conexión SSE establecida con la Terminal Holográfica.' })}\n\n`);
 
     // Prevención de fugas de memoria: Limpiar al desconectar
     req.on('close', () => {
-        state.events.removeListener('log', onLog);
+        state.removeListener('log', onLog);
+        state.removeListener('chart_data', onChart);
     });
 });
 

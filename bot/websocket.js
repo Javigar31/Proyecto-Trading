@@ -14,7 +14,7 @@ function connectToBinance() {
 
     wsClient.on('open', () => {
         console.log('[WS] Conectado a Binance Streams.');
-        state.events.emit('log', '> WebSocket conectado. Escuchando klines de 1m y 5m...');
+        state.emit('log', '> WebSocket conectado. Escuchando klines de 1m y 5m...');
     });
 
     wsClient.on('message', (data) => {
@@ -38,7 +38,7 @@ function connectToBinance() {
 
     wsClient.on('error', (err) => {
         console.error('[WS] Error:', err);
-        state.events.emit('log', `> [WS ERROR] ${err.message}`);
+        state.emit('log', `> [WS ERROR] ${err.message}`);
     });
 
     wsClient.on('close', () => {
