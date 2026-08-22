@@ -23,9 +23,64 @@ class DashboardController {
 
     init() {
         this.btnToggle.addEventListener('click', () => this.handleToggle());
-        // Al arrancar, podríamos consultar un endpoint GET /api/status para saber si ya corría.
-        // Por ahora, asumimos apagado inicial según diseño.
         this.updateUI();
+        this.initTerminal();
+    }
+
+    initTerminal() {
+        this.logsOutput = document.getElementById('logs-output');
+        this.logsOutput.innerHTML = ''; // Limpiar los placeholders de la UI
+        
+        const eventSource = new EventSource('/api/logs');
+
+        eventSource.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            this.appendLog(data.message);
+        };
+
+        eventSource.onerror = (error) => {
+            console.error('SSE Error:', error);
+            this.appendLog('> [ERROR] Conexión con Terminal perdida.', 'error');
+        };
+    }
+
+    appendLog(message, forceColorClass = null) {
+        if (!this.logsOutput) return;
+
+        const line = document.createElement('div');
+        line.className = 'log-line';
+
+        // Mapeo semántico de colores (Prompt 04)
+        if (forceColorClass) {
+            line.classList.add(forceColorClass);
+        } else if (message.includes('TAKE PROFIT')) {
+            line.style.color = 'var(--color-success)'; // Verde
+        } else if (message.includes('STOP LOSS')) {
+            line.style.color = 'var(--color-danger)'; // Rojo
+        } else if (message.includes('COMPRA')) {
+            line.style.color = 'cyan'; // Compra en Cyan
+        } else if (message.includes('Nuevo Balance Total:')) {
+            line.style.color = 'gold'; // Balances en Dorado
+            
+            // Integración bidireccional: Actualizar el widget de balance si lo detecta el log
+            const match = message.match(/([\d.]+) USDT/);
+            if (match && document.getElementById('balance-val')) {
+                document.getElementById('balance-val').textContent = `${parseFloat(match[1]).toFixed(2)} USDT`;
+            }
+        } else {
+            line.classList.add('text-muted'); // Gris genérico por defecto
+        }
+
+        line.textContent = message;
+        this.logsOutput.appendChild(line);
+
+        // Auto-scroll automático manteniendo la vista abajo
+        this.logsOutput.scrollTop = this.logsOutput.scrollHeight;
+        
+        // Prevención de fugas de memoria: Máximo 100 líneas en el DOM
+        while (this.logsOutput.children.length > 100) {
+            this.logsOutput.removeChild(this.logsOutput.firstChild);
+        }
     }
 
     async handleToggle() {

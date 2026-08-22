@@ -18,20 +18,22 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Endpoints de control
 app.post('/api/start', async (req, res) => {
-    if (state.isBotRunning) {
+    if (state.isBotRunning || state.isWarmingUp) {
         return res.status(400).json({
             status: 'error',
-            message: 'El bot ya está en ejecución.',
+            message: 'El bot ya está en ejecución o inicializándose.',
             isBotRunning: state.isBotRunning
         });
     }
 
     try {
+        state.isWarmingUp = true;
         // Fase de calentamiento (REST)
         await simulator.warmup();
         
         // Si el warmup es exitoso, marcamos como corriendo e iniciamos el stream
         state.isBotRunning = true;
+        state.isWarmingUp = false;
         connectToBinance();
         console.log('[API] Bot INICIADO por el usuario.');
 
@@ -41,6 +43,7 @@ app.post('/api/start', async (req, res) => {
             isBotRunning: state.isBotRunning
         });
     } catch (error) {
+        state.isWarmingUp = false;
         return res.status(500).json({
             status: 'error',
             message: 'Error al inicializar el bot (Warmup falló).',
@@ -68,6 +71,29 @@ app.post('/api/stop', (req, res) => {
         status: 'success',
         message: 'Bot detenido correctamente.',
         isBotRunning: state.isBotRunning
+    });
+});
+
+// Endpoint SSE para la Terminal Holográfica
+app.get('/api/logs', (req, res) => {
+    // Configurar cabeceras obligatorias para Server-Sent Events
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders(); 
+
+    // Callback para enviar mensajes al cliente
+    const onLog = (message) => {
+        res.write(`data: ${JSON.stringify({ message })}\n\n`);
+    };
+
+    // Suscribir al EventEmitter del estado global
+    state.events.on('log', onLog);
+    res.write(`data: ${JSON.stringify({ message: '> Conexión SSE establecida con la Terminal Holográfica.' })}\n\n`);
+
+    // Prevención de fugas de memoria: Limpiar al desconectar
+    req.on('close', () => {
+        state.events.removeListener('log', onLog);
     });
 });
 

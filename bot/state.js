@@ -4,6 +4,7 @@ class BotState extends EventEmitter {
     constructor() {
         super();
         this.isBotRunning = false;
+        this.isWarmingUp = false;
         
         // Cuentas Paper Trading
         this.virtualBalance = 100.0;
