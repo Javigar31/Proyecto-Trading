@@ -55,8 +55,13 @@
 
             <!-- Chart Panel -->
             <section class="glass-panel chart-panel">
-                <div class="terminal-header">
-                    <h3>Gráfica en Tiempo Real (BTC/USDT)</h3>
+                <div class="terminal-header" style="display: flex; justify-content: space-between; align-items: center;">
+                    <h3>Gráfica en Tiempo Real</h3>
+                    <select id="chart-symbol-select" class="btn" style="padding: 5px 10px; background: rgba(255,255,255,0.05); color: #fff; border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; outline: none; cursor: pointer;">
+                        <option value="SOL/USDT" style="background: #0f172a;">SOL/USDT</option>
+                        <option value="DOGE/USDT" style="background: #0f172a;">DOGE/USDT</option>
+                        <option value="PEPE/USDT" style="background: #0f172a;">PEPE/USDT</option>
+                    </select>
                 </div>
                 <div id="tv-chart"></div>
             </section>

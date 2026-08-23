@@ -26,6 +26,15 @@ class DashboardController {
         this.updateUI();
         
         this.chartController = new ChartController('tv-chart');
+        
+        // Manejo del selector de activo
+        this.symbolSelect = document.getElementById('chart-symbol-select');
+        this.activeSymbol = this.symbolSelect.value;
+        this.symbolSelect.addEventListener('change', (e) => {
+            this.activeSymbol = e.target.value;
+            this.chartController.clear();
+        });
+
         this.initTerminal();
     }
 
@@ -41,7 +50,9 @@ class DashboardController {
                 this.appendLog(data.message);
             }
             if (data.chart) {
-                this.chartController.update(data.chart);
+                if (data.chart.symbol === this.activeSymbol) {
+                    this.chartController.update(data.chart);
+                }
             }
         };
 
@@ -200,7 +211,7 @@ class ChartController {
     }
 
     update(data) {
-        // data: { time, price, signal }
+        // data: { symbol, time, price, signal }
         this.series.update({ time: data.time, value: data.price });
 
         if (data.signal !== 'WAITING') {
@@ -215,6 +226,13 @@ class ChartController {
             this.markers.push(marker);
             this.series.setMarkers(this.markers);
         }
+    }
+
+    clear() {
+        // Resetear la gráfica al cambiar de moneda
+        this.series.setData([]);
+        this.markers = [];
+        this.series.setMarkers([]);
     }
 }
 

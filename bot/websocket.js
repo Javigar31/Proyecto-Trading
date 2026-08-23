@@ -1,13 +1,18 @@
 const WebSocket = require('ws');
 const simulator = require('./simulator');
-const state = require('./state');
+const { state, WHITELIST } = require('./state');
 
 let wsClient = null;
 
 function connectToBinance() {
     if (wsClient) return;
 
-    const streams = 'btcusdt@kline_1m/btcusdt@kline_5m';
+    // Construir streams para cada símbolo en la WHITELIST
+    const streamPaths = WHITELIST.map(sym => {
+        const base = sym.replace('/', '').toLowerCase();
+        return `${base}@kline_1m/${base}@kline_5m`;
+    });
+    const streams = streamPaths.join('/');
     const wsUrl = `wss://stream.binance.com:9443/stream?streams=${streams}`;
 
     wsClient = new WebSocket(wsUrl);
@@ -23,8 +28,11 @@ function connectToBinance() {
             if (!payload.data || !payload.data.k) return;
 
             const klineData = payload.data.k;
+            // Mapear "SOLUSDT" a "SOL/USDT"
+            const symbol = klineData.s.replace(/^(.+)(USDT)$/, '$1/USDT');
+            
             const kline = {
-                symbol: klineData.s,
+                symbol: symbol,
                 interval: klineData.i,
                 close: klineData.c,
                 isClosed: klineData.x

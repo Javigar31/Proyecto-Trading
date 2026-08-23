@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const state = require('./bot/state');
+const { state } = require('./bot/state');
 const simulator = require('./bot/simulator');
 const { connectToBinance, disconnectFromBinance } = require('./bot/websocket');
 

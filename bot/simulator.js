@@ -1,32 +1,38 @@
 const ccxt = require('ccxt');
-const state = require('./state');
+const { state, WHITELIST } = require('./state');
 const indicators = require('./indicators');
 
 class Simulator {
     constructor() {
-        this.symbol = 'BTC/USDT';
         this.exchange = new ccxt.binance();
+    }
+
+    async warmupSymbol(symbol) {
+        try {
+            const [klines1m, klines5m] = await Promise.all([
+                this.exchange.fetchOHLCV(symbol, '1m', undefined, 50),
+                this.exchange.fetchOHLCV(symbol, '5m', undefined, 250)
+            ]);
+            
+            indicators.initBuffers(symbol, klines1m, klines5m);
+            console.log(`[SIMULATOR] Warmup completado para ${symbol}. Velas 1m: ${klines1m.length}, Velas 5m: ${klines5m.length}`);
+            state.emit('log', `> Warmup OK: ${symbol}`);
+        } catch (error) {
+            console.error(`[SIMULATOR] Error en warmup de ${symbol}:`, error);
+            state.emit('log', `> ERROR warmup ${symbol}: ${error.message}`);
+            throw error;
+        }
     }
 
     async warmup() {
         console.log('[SIMULATOR] Iniciando fase de Warmup...');
         state.emit('log', '> Descargando historial de velas para indicadores...');
         
-        try {
-            // Descargar 50 velas de 1m y 250 velas de 5m en paralelo
-            const [klines1m, klines5m] = await Promise.all([
-                this.exchange.fetchOHLCV(this.symbol, '1m', undefined, 50),
-                this.exchange.fetchOHLCV(this.symbol, '5m', undefined, 250)
-            ]);
-            
-            indicators.initBuffers(klines1m, klines5m);
-            console.log(`[SIMULATOR] Warmup completado. Velas 1m: ${klines1m.length}, Velas 5m: ${klines5m.length}`);
-            state.emit('log', '> Warmup completado con éxito. Indicadores listos.');
-        } catch (error) {
-            console.error('[SIMULATOR] Error en warmup:', error);
-            state.emit('log', `> ERROR en warmup: ${error.message}`);
-            throw error; // Re-lanzar para manejar en server.js
-        }
+        await Promise.allSettled(
+            WHITELIST.map(symbol => this.warmupSymbol(symbol))
+        );
+        
+        state.emit('log', '> Warmup completado. Indicadores listos.');
     }
 
     processTick(kline) {
@@ -34,63 +40,70 @@ class Simulator {
         if (!state.isBotRunning) return;
 
         const currentPrice = parseFloat(kline.close);
-        state.indicators.currentPrice = currentPrice;
+        const symbol = kline.symbol;
+
+        // Si el estado de los indicadores no existe (ej. un fallo de warmup extremo), ignorar
+        if (!state.indicators[symbol]) return;
+
+        state.indicators[symbol].currentPrice = currentPrice;
 
         // Actualizar indicadores
         if (kline.interval === '1m') {
-            indicators.update1m(currentPrice, kline.isClosed);
+            indicators.update1m(symbol, currentPrice, kline.isClosed);
         } else if (kline.interval === '5m') {
-            indicators.update5m(currentPrice, kline.isClosed);
+            indicators.update5m(symbol, currentPrice, kline.isClosed);
         }
 
         // Obtener cálculos matemáticos
-        const rsi = indicators.getRSI();
-        const bollinger = indicators.getBollinger();
-        const ema200 = indicators.getEMA200();
+        const rsi = indicators.getRSI(symbol);
+        const bollinger = indicators.getBollinger(symbol);
+        const ema200 = indicators.getEMA200(symbol);
 
-        // Actualizar el estado global para uso de la UI (Prompt 04)
-        state.indicators.rsi1m = rsi;
-        state.indicators.bollingerLower1m = bollinger ? bollinger.lower : null;
-        state.indicators.ema200_5m = ema200;
+        // Actualizar el estado global para uso de la UI
+        state.indicators[symbol].rsi1m = rsi;
+        state.indicators[symbol].bollingerLower1m = bollinger ? bollinger.lower : null;
+        state.indicators[symbol].ema200_5m = ema200;
 
         // Evaluar estrategia
         if (rsi && bollinger && ema200) {
             // Heartbeat de mercado (Logs solo al cerrar)
             if (kline.interval === '1m' && kline.isClosed) {
-                state.emit('log', `> [MERCADO] Precio: ${currentPrice.toFixed(2)} | RSI: ${rsi.toFixed(2)} | BB inf: ${bollinger.lower.toFixed(2)} | EMA200: ${ema200.toFixed(2)}`);
+                state.emit('log', `> [MERCADO] ${symbol} | Precio: ${currentPrice.toFixed(2)} | RSI: ${rsi.toFixed(2)} | BB inf: ${bollinger.lower.toFixed(2)} | EMA200: ${ema200.toFixed(2)}`);
             }
             
             // Enviar a la gráfica en cada tick para tiempo real
             if (kline.interval === '1m') {
                 const candleTime = Math.floor(Date.now() / 60000) * 60;
-                state.emit('chart_data', { time: candleTime, price: currentPrice, signal: 'WAITING' });
+                // Adjuntamos el symbol al evento chart_data
+                state.emit('chart_data', { symbol: symbol, time: candleTime, price: currentPrice, signal: 'WAITING' });
             }
 
-            this.evaluateStrategy(currentPrice, rsi, bollinger.lower, ema200);
+            this.evaluateStrategy(symbol, currentPrice, rsi, bollinger.lower, ema200);
         }
     }
 
-    evaluateStrategy(currentPrice, rsi, bollingerLower, ema200) {
-        if (!state.isPositionOpen) {
+    evaluateStrategy(symbol, currentPrice, rsi, bollingerLower, ema200) {
+        if (!state.activePosition) {
             // --- GATILLO DE ENTRADA (Triple Confluencia) ---
             if (rsi < 30 && currentPrice <= bollingerLower && currentPrice > ema200) {
-                this.executeBuy(currentPrice);
+                this.executeBuy(symbol, currentPrice);
             }
         } else {
-            // --- GATILLO DE SALIDA (Monitor de PNL en tiempo real) ---
-            const currentCryptoValue = state.investedCrypto * currentPrice;
-            const netReturn = currentCryptoValue * 0.999; // Descontar 0.1% de fee de salida
+            // --- GATILLO DE SALIDA ---
+            // IMPORTANTE: Solo evaluamos si el tick corresponde al activo que tenemos comprado
+            if (state.activePosition.symbol !== symbol) return;
 
-            if (netReturn >= 100.50) {
-                this.executeSell(currentPrice, netReturn, 'TAKE PROFIT');
-            } else if (netReturn <= 99.50) {
-                this.executeSell(currentPrice, netReturn, 'STOP LOSS');
+            // Comparar con el TP/SL precalculado
+            if (currentPrice >= state.activePosition.targetTP) {
+                this.executeSell(symbol, currentPrice, 'TAKE PROFIT');
+            } else if (currentPrice <= state.activePosition.targetSL) {
+                this.executeSell(symbol, currentPrice, 'STOP LOSS');
             }
         }
     }
 
-    executeBuy(price) {
-        console.log(`[SIMULATOR] SEÑAL DE COMPRA EJECUTADA @ ${price}`);
+    executeBuy(symbol, price) {
+        console.log(`[SIMULATOR] SEÑAL DE COMPRA EJECUTADA EN ${symbol} @ ${price}`);
         
         // Simulación estricta de fees (0.1%)
         const investment = 100.0;
@@ -98,32 +111,41 @@ class Simulator {
         const investedUSDT = investment - fee; // 99.9 USDT reales a mercado
         const cryptoAmount = investedUSDT / price;
 
-        state.isPositionOpen = true;
-        state.buyPrice = price;
-        state.investedCrypto = cryptoAmount;
+        // Precalcular targets netos del Prompt 05 (+1.0% y -0.8% netos después de todas las comisiones)
+        const targetTP = price * 1.012023;
+        const targetSL = price * 0.991983;
+
+        state.activePosition = {
+            symbol: symbol,
+            buyPrice: price,
+            investedCrypto: cryptoAmount,
+            targetTP: targetTP,
+            targetSL: targetSL
+        };
         
-        state.emit('log', `[COMPRA] Precio: ${price} | Fee: ${fee} USDT | Invertido neto: ${investedUSDT} USDT`);
+        state.emit('log', `[COMPRA] ${symbol} @ ${price} | Fee: ${fee} USDT | Invertido neto: ${investedUSDT} USDT`);
+        
         const candleTime = Math.floor(Date.now() / 60000) * 60;
-        state.emit('chart_data', { time: candleTime, price: price, signal: 'BUY' });
+        state.emit('chart_data', { symbol: symbol, time: candleTime, price: price, signal: 'BUY' });
     }
 
-    executeSell(price, netReturn, reason) {
-        console.log(`[SIMULATOR] ${reason} EJECUTADO @ ${price} | Retorno Neto: ${netReturn.toFixed(2)}`);
+    executeSell(symbol, price, reason) {
+        console.log(`[SIMULATOR] ${reason} EJECUTADO EN ${symbol} @ ${price}`);
         
-        // El capital virtual varía según el beneficio neto de los 100 USDT iniciales
+        const currentCryptoValue = state.activePosition.investedCrypto * price;
+        const netReturn = currentCryptoValue * 0.999; // Descontar 0.1% de fee de salida
+
         const profit = netReturn - 100.0; 
         state.virtualBalance += profit;
 
-        state.emit('log', `[${reason}] Precio Venta: ${price} | Retorno Neto: ${netReturn.toFixed(2)} USDT | Profit: ${profit.toFixed(2)} USDT`);
+        state.emit('log', `[${reason}] ${symbol} @ ${price} | Retorno Neto: ${netReturn.toFixed(2)} USDT | Profit: ${profit.toFixed(2)} USDT`);
         state.emit('log', `> Nuevo Balance Total: ${state.virtualBalance.toFixed(2)} USDT`);
         
         const signal = reason === 'TAKE PROFIT' ? 'SELL_TP' : 'SELL_SL';
         const candleTime = Math.floor(Date.now() / 60000) * 60;
-        state.emit('chart_data', { time: candleTime, price: price, signal: signal });
+        state.emit('chart_data', { symbol: symbol, time: candleTime, price: price, signal: signal });
 
-        state.isPositionOpen = false;
-        state.buyPrice = 0;
-        state.investedCrypto = 0;
+        state.activePosition = null;
     }
 }
 
