@@ -320,7 +320,7 @@ h2 {
 .terminal-body {
     font-family: var(--font-mono);
     font-size: 0.875rem;
-    height: 328px;
+    height: auto;
     overflow-y: auto;
     color: var(--color-success);
 }
