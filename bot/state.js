@@ -11,9 +11,9 @@ class BotState extends EventEmitter {
         // Cuentas Paper Trading
         this.virtualBalance = 100.0;
         
-        // Estado de posición (Solo se permite UNA a la vez en todo el sistema)
-        // Estructura: { symbol, buyPrice, investedCrypto, targetTP, targetSL }
-        this.activePosition = null; 
+        // Estado de posiciones Dual-Slot (Máximo 2 posiciones a la vez)
+        // Estructura de cada slot: { symbol, buyPrice, investedCrypto, targetTP, targetSL, slotIndex, originalInvestment }
+        this.activePositions = [null, null]; 
         
         // Indicadores (diccionario por símbolo)
         this.indicators = {};

@@ -66,10 +66,14 @@ class Simulator {
         const currentPrice = parseFloat(kline.close);
         const symbol = kline.symbol;
 
-        // Si el estado de los indicadores no existe (ej. un fallo de warmup extremo), ignorar
+        // Si el estado de los indicadores no existe, ignorar
         if (!state.indicators[symbol]) return;
 
         state.indicators[symbol].currentPrice = currentPrice;
+
+        // --- 1. EVALUAR SALIDAS EN TIEMPO REAL ---
+        // Verificamos en cada tick (incluso si no cierra la vela) para SL/TP inmediato
+        this.evaluateExit(symbol, currentPrice);
 
         // Actualizar indicadores
         if (kline.interval === '1m') {
@@ -88,103 +92,142 @@ class Simulator {
         state.indicators[symbol].bollingerLower1m = bollinger ? bollinger.lower : null;
         state.indicators[symbol].ema200_5m = ema200;
 
-        // Evaluar estrategia
+        // Validamos si todos los indicadores están listos
         if (rsi && bollinger && ema200) {
-            // Calcular probabilidad de entrada
+            // Calcular probabilidad de entrada (para enviarla a UI)
             const probability = calculateEntryProbability(
                 currentPrice, rsi, bollinger.middle, bollinger.lower, ema200
             );
 
-            // Heartbeat de mercado (Logs solo al cerrar)
+            // Heartbeat de mercado y acciones al CERRAR la vela de 1m
             if (kline.interval === '1m' && kline.isClosed) {
                 const decimals = symbol === 'PEPE/USDT' ? 8 : (symbol === 'DOGE/USDT' ? 4 : 2);
                 state.emit('log', `> [MERCADO] ${symbol} | Precio: ${currentPrice.toFixed(decimals)} | RSI: ${rsi.toFixed(2)} | BB inf: ${bollinger.lower.toFixed(decimals)} | EMA200: ${ema200.toFixed(decimals)} | Prob: ${probability.toFixed(2)}%`);
-            }
-            
-            // Enviar a la gráfica en cada tick para tiempo real
-            if (kline.interval === '1m') {
+                
+                // Enviar a la gráfica para tiempo real
                 const candleTime = Math.floor(Date.now() / 60000) * 60;
                 state.emit('chart_data', { symbol, time: candleTime, price: currentPrice, signal: 'WAITING', probability });
-            }
 
-            this.evaluateStrategy(symbol, currentPrice, rsi, bollinger.lower, ema200, probability);
-        }
-    }
-
-    evaluateStrategy(symbol, currentPrice, rsi, bollingerLower, ema200, probability) {
-        if (!state.activePosition) {
-            // --- GATILLO DE ENTRADA (Triple Confluencia) ---
-            if (rsi < 30 && currentPrice <= bollingerLower && currentPrice > ema200) {
-                this.executeBuy(symbol, currentPrice, probability);
-            }
-        } else {
-            // --- GATILLO DE SALIDA ---
-            // IMPORTANTE: Solo evaluamos si el tick corresponde al activo que tenemos comprado
-            if (state.activePosition.symbol !== symbol) return;
-
-            // Comparar con el TP/SL precalculado
-            if (currentPrice >= state.activePosition.targetTP) {
-                this.executeSell(symbol, currentPrice, 'TAKE PROFIT');
-            } else if (currentPrice <= state.activePosition.targetSL) {
-                this.executeSell(symbol, currentPrice, 'STOP LOSS');
+                // --- 2. EVALUAR ENTRADAS DE FORMA CONCURRENTE AL CERRAR VELA ---
+                this.evaluateMarketConcurrently().catch(err => console.error('[SIMULATOR] Error en evaluación concurrente:', err));
             }
         }
     }
 
-    executeBuy(symbol, price, probability) {
-        console.log(`[SIMULATOR] SEÑAL DE COMPRA EJECUTADA EN ${symbol} @ ${price}`);
+    evaluateExit(symbol, currentPrice) {
+        // Busca si el simbolo está en algún slot activo
+        for (let i = 0; i < state.activePositions.length; i++) {
+            const pos = state.activePositions[i];
+            if (pos && pos.symbol === symbol) {
+                if (currentPrice >= pos.targetTP) {
+                    this.executeSell(symbol, currentPrice, 'TAKE PROFIT', i);
+                } else if (currentPrice <= pos.targetSL) {
+                    this.executeSell(symbol, currentPrice, 'STOP LOSS', i);
+                }
+            }
+        }
+    }
+
+    async evaluateMarketConcurrently() {
+        // Promesas concurrentes para evaluar todos los símbolos
+        const evaluations = await Promise.all(WHITELIST.map(async (sym) => {
+            const currentPrice = state.indicators[sym].currentPrice;
+            const rsi = indicators.getRSI(sym);
+            const bollinger = indicators.getBollinger(sym);
+            const ema200 = indicators.getEMA200(sym);
+
+            if (!currentPrice || !rsi || !bollinger || !ema200) {
+                return { symbol: sym, score: 0 };
+            }
+
+            const score = calculateEntryProbability(currentPrice, rsi, bollinger.middle, bollinger.lower, ema200);
+            
+            return {
+                symbol: sym,
+                score: score,
+                price: currentPrice
+            };
+        }));
+
+        // Filtrar candidatos con score >= 85% y que NO estén ya abiertas en algún slot
+        const elegibles = evaluations.filter(e => 
+            e.score >= 85 && 
+            !state.activePositions.some(p => p && p.symbol === e.symbol)
+        );
+
+        // Ordenar candidatos de mayor a menor score
+        elegibles.sort((a, b) => b.score - a.score);
+
+        // Asignar ganadores a slots libres
+        for (const candidate of elegibles) {
+            const freeSlotIndex = state.activePositions.findIndex(p => p === null);
+            if (freeSlotIndex !== -1) {
+                this.executeBuy(candidate.symbol, candidate.price, candidate.score, freeSlotIndex);
+            } else {
+                break; // No hay más slots libres
+            }
+        }
+    }
+
+    executeBuy(symbol, price, probability, slotIndex) {
+        console.log(`[SIMULATOR] SEÑAL DE COMPRA EJECUTADA EN ${symbol} @ ${price} (SLOT ${slotIndex})`);
         
-        // Simulación estricta de fees (0.1%)
-        const investment = 100.0;
-        const fee = investment * 0.001; // 0.1 USDT
-        const investedUSDT = investment - fee; // 99.9 USDT reales a mercado
+        // Inversión: 50% del balance virtual actual
+        const investmentAmount = state.virtualBalance / 2.0;
+        const fee = investmentAmount * 0.001; // 0.1% de fee de Binance
+        const investedUSDT = investmentAmount - fee; 
         const cryptoAmount = investedUSDT / price;
 
-        // Precalcular targets netos del Prompt 05 (+1.0% y -0.8% netos después de todas las comisiones)
+        // Precalcular targets netos del Prompt 05 (+1.0% y -0.8% netos)
         const targetTP = price * 1.012023;
         const targetSL = price * 0.991983;
 
-        state.activePosition = {
+        state.activePositions[slotIndex] = {
             symbol: symbol,
             buyPrice: price,
             investedCrypto: cryptoAmount,
             targetTP: targetTP,
-            targetSL: targetSL
+            targetSL: targetSL,
+            slotIndex: slotIndex,
+            originalInvestment: investmentAmount
         };
         
-        state.emit('log', `[COMPRA] ${symbol} @ ${price} | Fee: ${fee} USDT | Invertido neto: ${investedUSDT} USDT | Prob: ${probability}%`);
+        state.emit('log', `[COMPRA] ${symbol} @ ${price} | Slot: ${slotIndex} | Inv: ${investedUSDT.toFixed(2)} USDT | Prob: ${probability.toFixed(2)}%`);
         
         const candleTime = Math.floor(Date.now() / 60000) * 60;
         state.emit('chart_data', { symbol, time: candleTime, price, signal: 'BUY', probability });
     }
 
-    executeSell(symbol, price, reason) {
-        console.log(`[SIMULATOR] ${reason} EJECUTADO EN ${symbol} @ ${price}`);
+    executeSell(symbol, price, reason, slotIndex) {
+        console.log(`[SIMULATOR] ${reason} EJECUTADO EN ${symbol} @ ${price} (SLOT ${slotIndex})`);
         
-        const currentCryptoValue = state.activePosition.investedCrypto * price;
+        const pos = state.activePositions[slotIndex];
+        const currentCryptoValue = pos.investedCrypto * price;
         const netReturn = currentCryptoValue * 0.999; // Descontar 0.1% de fee de salida
 
-        const profit = netReturn - 100.0; 
+        // El profit se calcula respecto al dinero real restado del balance al entrar
+        const profit = netReturn - pos.originalInvestment; 
         state.virtualBalance += profit;
 
         // Persistencia asíncrona a la base de datos
         db.updateBalance(state.virtualBalance).catch(err => console.error('[DB] Error updateBalance:', err));
         db.saveTrade({
             symbol: symbol,
-            buyPrice: state.activePosition.buyPrice,
+            buyPrice: pos.buyPrice,
             sellPrice: price,
             exitReason: reason,
             profitUsdt: profit
         }).catch(err => console.error('[DB] Error saveTrade:', err));
 
-        state.emit('log', `[${reason}] ${symbol} @ ${price} | Retorno Neto: ${netReturn.toFixed(2)} USDT | Profit: ${profit.toFixed(2)} USDT`);
+        state.emit('log', `[${reason}] ${symbol} @ ${price} | Slot: ${slotIndex} | Retorno: ${netReturn.toFixed(2)} USDT | Profit: ${profit.toFixed(2)} USDT`);
         state.emit('log', `> Nuevo Balance Total: ${state.virtualBalance.toFixed(2)} USDT`);
         
         const signal = reason === 'TAKE PROFIT' ? 'SELL_TP' : 'SELL_SL';
         const candleTime = Math.floor(Date.now() / 60000) * 60;
         state.emit('chart_data', { symbol, time: candleTime, price, signal, probability: 0 });
 
-        state.activePosition = null;
+        // Liberar el slot
+        state.activePositions[slotIndex] = null;
     }
 }
 
