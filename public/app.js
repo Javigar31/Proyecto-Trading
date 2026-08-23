@@ -27,12 +27,18 @@ class DashboardController {
         
         this.chartController = new ChartController('tv-chart');
         
+        // Referencias al medidor de probabilidad
+        this.probText = document.getElementById('prob-text');
+        this.probBar  = document.getElementById('prob-bar');
+
         // Manejo del selector de activo
         this.symbolSelect = document.getElementById('chart-symbol-select');
         this.activeSymbol = this.symbolSelect.value;
         this.symbolSelect.addEventListener('change', (e) => {
             this.activeSymbol = e.target.value;
             this.chartController.clear();
+            // Resetear medidor al cambiar de moneda
+            this.updateProbability(0);
         });
 
         this.initTerminal();
@@ -42,9 +48,17 @@ class DashboardController {
         this.logsOutput = document.getElementById('logs-output');
         this.logsOutput.innerHTML = ''; // Limpiar los placeholders de la UI
         
-        const eventSource = new EventSource('/api/logs');
+        this.connectSSE();
+    }
 
-        eventSource.onmessage = (event) => {
+    connectSSE() {
+        if (this.eventSource) {
+            this.eventSource.close();
+        }
+        
+        this.eventSource = new EventSource('/api/logs');
+
+        this.eventSource.onmessage = (event) => {
             const data = JSON.parse(event.data);
             if (data.message) {
                 this.appendLog(data.message);
@@ -52,14 +66,38 @@ class DashboardController {
             if (data.chart) {
                 if (data.chart.symbol === this.activeSymbol) {
                     this.chartController.update(data.chart);
+                    // Actualizar el medidor de probabilidad
+                    this.updateProbability(data.chart.probability ?? 0);
                 }
             }
         };
 
-        eventSource.onerror = (error) => {
+        this.eventSource.onerror = (error) => {
             console.error('SSE Error:', error);
-            this.appendLog('> [ERROR] Conexión con Terminal perdida.', 'error');
+            this.appendLog('> [ERROR] Conexión con Terminal perdida. Reconectando en 5s...', 'error');
+            
+            // Cerrar la conexión defectuosa
+            this.eventSource.close();
+            
+            // Reconexión silenciosa
+            setTimeout(() => {
+                this.connectSSE();
+            }, 5000);
         };
+    }
+
+    updateProbability(value) {
+        if (!this.probBar || !this.probText) return;
+        const clamped = Math.max(0, Math.min(100, value));
+        this.probBar.style.width = `${clamped}%`;
+        this.probText.textContent = `${clamped.toFixed(2)}%`;
+        if (clamped >= 80) {
+            this.probBar.classList.add('hot');
+            this.probText.style.color = '#4ade80';
+        } else {
+            this.probBar.classList.remove('hot');
+            this.probText.style.color = '';
+        }
     }
 
     appendLog(message, forceColorClass = null) {

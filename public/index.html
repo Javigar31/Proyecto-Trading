@@ -32,7 +32,7 @@
                 <h2>Control de Ejecución</h2>
                 <p class="subtitle">Activa o detén el motor de trading en tiempo real.</p>
                 
-                <button id="toggle-bot-btn" class="btn btn-start">
+                <button id="toggle-bot-btn" class="btn btn-start" type="button">
                     <span class="btn-text">INICIAR BOT</span>
                     <span class="btn-loader loader-hidden"></span>
                 </button>
@@ -49,6 +49,13 @@
                     <div class="stat-card">
                         <span class="stat-label">PNL Hoy</span>
                         <span class="stat-value neutral" id="pnl-val">0.00%</span>
+                    </div>
+                    <div class="stat-card prob-card">
+                        <span class="stat-label">Probabilidad de Entrada</span>
+                        <span class="stat-value" id="prob-text" style="font-size: 1.5rem;">0.00%</span>
+                        <div class="progress-container">
+                            <div class="progress-bar" id="prob-bar" style="width: 0%"></div>
+                        </div>
                     </div>
                 </div>
             </section>

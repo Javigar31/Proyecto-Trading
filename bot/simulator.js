@@ -1,6 +1,24 @@
+require('dotenv').config();
 const ccxt = require('ccxt');
 const { state, WHITELIST } = require('./state');
 const indicators = require('./indicators');
+const db = require('./db');
+
+/**
+ * Calcula la probabilidad cuantitativa de entrada (0 a 100).
+ * RSI Score (60%): 60 -> 0%, 30 -> 100%. 
+ * Bollinger Score (40%): bbMid -> 0%, bbLower -> 100%.
+ * Hard Veto: Si precio <= EMA200, retorna 0 (tendencia bajista).
+ */
+function calculateEntryProbability(currentPrice, rsi, bbMid, bbLower, ema200) {
+    if (!currentPrice || !rsi || !bbMid || !bbLower || !ema200) return 0.0;
+    if (currentPrice <= ema200) return 0.0;
+
+    const rsiScore = Math.max(0, Math.min(1, (60 - rsi) / (60 - 30)));
+    const bbScore  = Math.max(0, Math.min(1, (bbMid - currentPrice) / (bbMid - bbLower)));
+
+    return parseFloat(((rsiScore * 0.6 + bbScore * 0.4) * 100).toFixed(2));
+}
 
 class Simulator {
     constructor() {
@@ -26,6 +44,12 @@ class Simulator {
 
     async warmup() {
         console.log('[SIMULATOR] Iniciando fase de Warmup...');
+        
+        // Conectar BD y obtener estado base
+        await db.initDB();
+        state.virtualBalance = await db.getBalance();
+        state.emit('log', `> [DB] Balance inicial cargado: ${state.virtualBalance.toFixed(2)} USDT`);
+
         state.emit('log', '> Descargando historial de velas para indicadores...');
         
         await Promise.allSettled(
@@ -66,28 +90,32 @@ class Simulator {
 
         // Evaluar estrategia
         if (rsi && bollinger && ema200) {
+            // Calcular probabilidad de entrada
+            const probability = calculateEntryProbability(
+                currentPrice, rsi, bollinger.middle, bollinger.lower, ema200
+            );
+
             // Heartbeat de mercado (Logs solo al cerrar)
             if (kline.interval === '1m' && kline.isClosed) {
                 const decimals = symbol === 'PEPE/USDT' ? 8 : (symbol === 'DOGE/USDT' ? 4 : 2);
-                state.emit('log', `> [MERCADO] ${symbol} | Precio: ${currentPrice.toFixed(decimals)} | RSI: ${rsi.toFixed(2)} | BB inf: ${bollinger.lower.toFixed(decimals)} | EMA200: ${ema200.toFixed(decimals)}`);
+                state.emit('log', `> [MERCADO] ${symbol} | Precio: ${currentPrice.toFixed(decimals)} | RSI: ${rsi.toFixed(2)} | BB inf: ${bollinger.lower.toFixed(decimals)} | EMA200: ${ema200.toFixed(decimals)} | Prob: ${probability.toFixed(2)}%`);
             }
             
             // Enviar a la gráfica en cada tick para tiempo real
             if (kline.interval === '1m') {
                 const candleTime = Math.floor(Date.now() / 60000) * 60;
-                // Adjuntamos el symbol al evento chart_data
-                state.emit('chart_data', { symbol: symbol, time: candleTime, price: currentPrice, signal: 'WAITING' });
+                state.emit('chart_data', { symbol, time: candleTime, price: currentPrice, signal: 'WAITING', probability });
             }
 
-            this.evaluateStrategy(symbol, currentPrice, rsi, bollinger.lower, ema200);
+            this.evaluateStrategy(symbol, currentPrice, rsi, bollinger.lower, ema200, probability);
         }
     }
 
-    evaluateStrategy(symbol, currentPrice, rsi, bollingerLower, ema200) {
+    evaluateStrategy(symbol, currentPrice, rsi, bollingerLower, ema200, probability) {
         if (!state.activePosition) {
             // --- GATILLO DE ENTRADA (Triple Confluencia) ---
             if (rsi < 30 && currentPrice <= bollingerLower && currentPrice > ema200) {
-                this.executeBuy(symbol, currentPrice);
+                this.executeBuy(symbol, currentPrice, probability);
             }
         } else {
             // --- GATILLO DE SALIDA ---
@@ -103,7 +131,7 @@ class Simulator {
         }
     }
 
-    executeBuy(symbol, price) {
+    executeBuy(symbol, price, probability) {
         console.log(`[SIMULATOR] SEÑAL DE COMPRA EJECUTADA EN ${symbol} @ ${price}`);
         
         // Simulación estricta de fees (0.1%)
@@ -124,10 +152,10 @@ class Simulator {
             targetSL: targetSL
         };
         
-        state.emit('log', `[COMPRA] ${symbol} @ ${price} | Fee: ${fee} USDT | Invertido neto: ${investedUSDT} USDT`);
+        state.emit('log', `[COMPRA] ${symbol} @ ${price} | Fee: ${fee} USDT | Invertido neto: ${investedUSDT} USDT | Prob: ${probability}%`);
         
         const candleTime = Math.floor(Date.now() / 60000) * 60;
-        state.emit('chart_data', { symbol: symbol, time: candleTime, price: price, signal: 'BUY' });
+        state.emit('chart_data', { symbol, time: candleTime, price, signal: 'BUY', probability });
     }
 
     executeSell(symbol, price, reason) {
@@ -139,12 +167,22 @@ class Simulator {
         const profit = netReturn - 100.0; 
         state.virtualBalance += profit;
 
+        // Persistencia asíncrona a la base de datos
+        db.updateBalance(state.virtualBalance).catch(err => console.error('[DB] Error updateBalance:', err));
+        db.saveTrade({
+            symbol: symbol,
+            buyPrice: state.activePosition.buyPrice,
+            sellPrice: price,
+            exitReason: reason,
+            profitUsdt: profit
+        }).catch(err => console.error('[DB] Error saveTrade:', err));
+
         state.emit('log', `[${reason}] ${symbol} @ ${price} | Retorno Neto: ${netReturn.toFixed(2)} USDT | Profit: ${profit.toFixed(2)} USDT`);
         state.emit('log', `> Nuevo Balance Total: ${state.virtualBalance.toFixed(2)} USDT`);
         
         const signal = reason === 'TAKE PROFIT' ? 'SELL_TP' : 'SELL_SL';
         const candleTime = Math.floor(Date.now() / 60000) * 60;
-        state.emit('chart_data', { symbol: symbol, time: candleTime, price: price, signal: signal });
+        state.emit('chart_data', { symbol, time: candleTime, price, signal, probability: 0 });
 
         state.activePosition = null;
     }
