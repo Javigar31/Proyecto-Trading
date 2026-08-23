@@ -25,6 +25,7 @@ Durante esta intensa sesión de desarrollo, hemos pasado de un lienzo en blanco 
 - **Conexión Multiplexada**: El WebSocket ahora se suscribe en paralelo a los streams de 1m y 5m para una `WHITELIST` de monedas (`SOL/USDT`, `DOGE/USDT`, `PEPE/USDT`).
 - **Riesgo Blindado**: El bot calcula de forma determinista el `targetTP` (+1% neto) y `targetSL` (-0.8% neto) al ejecutar la compra y evalúa los precios **exclusivamente** contra el activo de la posición abierta. Solo se permite una posición activa simultánea en todo el sistema.
 - **Warmup Resiliente**: Se usa `Promise.allSettled` para la descarga masiva de velas vía REST (ccxt), evitando que un error de red en una moneda aborte el arranque de las demás.
+- **Precisión Decimal Dinámica**: Adaptación del log de latido (*heartbeat*) en `simulator.js` para formatear decimales según la escala de cada activo (`PEPE/USDT`: 8 decimales, `DOGE/USDT`: 4 decimales, `SOL/USDT`: 2 decimales, manteniendo RSI en 2), eliminando el problema visual de redondeo a `0.00` en micro-cotizaciones.
 
 ### 5. Gráfica Institucional en Tiempo Real (Bonus)
 - **TradingView Lightweight Charts v4**: Integración nativa sin dependencias pesadas.
@@ -39,7 +40,7 @@ Durante esta intensa sesión de desarrollo, hemos pasado de un lienzo en blanco 
 |--------|--------|-------|
 | Servidor Express | ✅ Completado | Sirve estáticos y gestiona APIs |
 | Conexión Binance WS | ✅ Completado | Streams paralelos multiplexados (multi-activo) |
-| Paper Trading | ✅ Completado | Simulación multi-moneda blindada en `state.js` |
+| Paper Trading | ✅ Completado | Simulación multi-moneda blindada en `state.js` con decimales dinámicos |
 | UI/UX | ✅ Completado | Terminal colorizada, balances dinámicos y gráfica real-time tabulada |
 | Base de Datos | ⏳ Pendiente | Todo el estado actual vive en la memoria RAM |
 | Trading Real | ⏳ Pendiente | Falta firmar las peticiones POST de `ccxt` con API Keys |

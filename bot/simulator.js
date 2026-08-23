@@ -68,7 +68,8 @@ class Simulator {
         if (rsi && bollinger && ema200) {
             // Heartbeat de mercado (Logs solo al cerrar)
             if (kline.interval === '1m' && kline.isClosed) {
-                state.emit('log', `> [MERCADO] ${symbol} | Precio: ${currentPrice.toFixed(2)} | RSI: ${rsi.toFixed(2)} | BB inf: ${bollinger.lower.toFixed(2)} | EMA200: ${ema200.toFixed(2)}`);
+                const decimals = symbol === 'PEPE/USDT' ? 8 : (symbol === 'DOGE/USDT' ? 4 : 2);
+                state.emit('log', `> [MERCADO] ${symbol} | Precio: ${currentPrice.toFixed(decimals)} | RSI: ${rsi.toFixed(2)} | BB inf: ${bollinger.lower.toFixed(decimals)} | EMA200: ${ema200.toFixed(decimals)}`);
             }
             
             // Enviar a la gráfica en cada tick para tiempo real
