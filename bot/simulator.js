@@ -12,15 +12,21 @@ const db = require('./db');
 function calculateEntryProbability(currentPrice, rsi, bbMid, bbLower, bbUpper, ema200) {
     if (!currentPrice || !rsi || !bbMid || !bbLower || !bbUpper || !ema200) return { score: 0.0, type: null };
 
+    // Filtro Anti-Rango (BBW)
+    const bbw = (bbUpper - bbLower) / bbMid;
+    if (bbw < 0.015) {
+        return { score: 0.0, type: 'NONE' };
+    }
+
     if (currentPrice > ema200) {
-        const rsiScore = Math.max(0, Math.min(1, (60 - rsi) / (60 - 30)));
+        const rsiScore = Math.max(0, Math.min(1, (45 - rsi) / (45 - 25)));
         const bbScore  = Math.max(0, Math.min(1, (bbMid - currentPrice) / (bbMid - bbLower)));
         return {
             score: parseFloat(((rsiScore * 0.6 + bbScore * 0.4) * 100).toFixed(2)),
             type: 'LONG'
         };
     } else {
-        const rsiScore = Math.max(0, Math.min(1, (rsi - 40) / (70 - 40)));
+        const rsiScore = Math.max(0, Math.min(1, (rsi - 55) / (75 - 55)));
         const bbScore  = Math.max(0, Math.min(1, (currentPrice - bbMid) / (bbUpper - bbMid)));
         return {
             score: parseFloat(((rsiScore * 0.6 + bbScore * 0.4) * 100).toFixed(2)),
@@ -167,9 +173,9 @@ class Simulator {
             };
         }));
 
-        // Filtrar candidatos con score >= 85% y que NO estén ya abiertas en algún slot
+        // Filtrar candidatos con score >= 90% y que NO estén ya abiertas en algún slot
         const elegibles = evaluations.filter(e => 
-            e.score >= 85 && 
+            e.score >= 90 && 
             !state.activePositions.some(p => p && p.symbol === e.symbol)
         );
 
@@ -198,12 +204,12 @@ class Simulator {
 
         let targetTP, targetSL;
         if (type === 'LONG') {
-            targetTP = price * 1.012023;
+            targetTP = price * 1.022043;
             targetSL = price * 0.991983;
         } else {
-            // SHORT: TP en +1.0% neto (precio baja ~1.20%), SL en -0.8% neto (precio sube ~0.80%)
-            targetTP = price * (1 - 0.012023); 
-            targetSL = price * (1 + 0.008017); 
+            // SHORT: Risk/Reward 1:2 según parámetros V3
+            targetTP = price * 0.978001; 
+            targetSL = price * 1.008001; 
         }
 
         state.activePositions[slotIndex] = {
