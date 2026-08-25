@@ -32,22 +32,35 @@ Durante esta intensa sesión de desarrollo, hemos pasado de un lienzo en blanco 
 - **Renderizado Dinámico y Filtrado**: Inyección de `chart_data` en cada tick usando *clamping* temporal. Se ha implementado un `<select>` en el header que **filtra** el SSE en vivo para que el usuario pueda saltar de la gráfica de SOL a DOGE, limpiando y redibujando el lienzo al instante.
 - **Señales Visuales**: Marcadores inyectados automáticamente para documentar las compras (flechas verdes arriba), TP (flechas verdes abajo) y SL (flechas rojas abajo).
 
+### 6. Persistencia en la Nube (Neon PostgreSQL)
+- **Base de Datos Serverless**: Se reemplazó el estado volátil en RAM por persistencia real en una base de datos Neon PostgreSQL.
+- **Sincronización en Tiempo Real**: El balance y el historial de operaciones se escriben y leen de forma robusta, inyectándose de manera instantánea al Frontend en el arranque del servidor, evitando estados visuales inconsistentes (como el clásico bug del balance "quemado").
+- **Historial Trazable**: Se creó la tabla `trade_history` y `bot_state` para mantener la resiliencia del sistema ante caídas del servidor.
+
+### 7. Arquitectura Dual-Slot (Estrategia Bidireccional)
+- **Long & Short**: El bot ha dejado de ser unidireccional. La función de puntuación decide operar en corto (`SHORT`) si el precio está por debajo de la EMA200 y toca el Bollinger Superior, calculando inversamente los retornos de inversión.
+- **Asset Isolation Multi-direccional**: Control asíncrono para asegurar que el sistema cierre correctamente posiciones bidireccionales con las matemáticas inversas para Take Profit (+1% neto) y Stop Loss (-0.8% neto) en los Shorts.
+
+### 8. UI de Élite (Panel de Historial)
+- **Historial de Operaciones**: Inserción dinámica y fluida de operaciones cerradas usando Server-Sent Events sin recargar la página.
+- **Micro-interacciones**: Barridos animados (`slideIn`), etiquetado de color (Rojo para Shorts/Pérdidas, Verde para Longs/Ganancias) y gestión del DOM para proteger el rendimiento eliminando nodos sobrantes (límite de 50 filas).
+
 ---
 
 ## 📊 Estado Actual del Proyecto
 
 | Módulo | Estado | Notas |
 |--------|--------|-------|
-| Servidor Express | ✅ Completado | Sirve estáticos y gestiona APIs |
-| Conexión Binance WS | ✅ Completado | Streams paralelos multiplexados (multi-activo) |
-| Paper Trading | ✅ Completado | Simulación multi-moneda blindada en `state.js` con decimales dinámicos |
-| UI/UX | ✅ Completado | Terminal colorizada, balances dinámicos y gráfica real-time tabulada |
-| Base de Datos | ⏳ Pendiente | Todo el estado actual vive en la memoria RAM |
-| Trading Real | ⏳ Pendiente | Falta firmar las peticiones POST de `ccxt` con API Keys |
+| Servidor Express | ✅ Completado | Sirve estáticos, gestiona APIs e inicializa conexiones seguras. |
+| Conexión Binance WS | ✅ Completado | Streams paralelos multiplexados (multi-activo). |
+| Paper Trading | ✅ Completado | Simulación multi-moneda dual (Long/Short) con decimales dinámicos. |
+| Base de Datos | ✅ Completado | Migración a Neon PostgreSQL completada y sincronizada en tiempo real. |
+| UI/UX | ✅ Completado | Terminal colorizada, balances reales dinámicos, gráfica real-time y Panel de Historial. |
+| Trading Real | ⏳ Pendiente | Falta firmar las peticiones POST de `ccxt` con API Keys en la mainnet. |
 
 ## 🔮 Próximos Pasos Sugeridos
-1. **Persistencia (Base de Datos)**: Conectar una base de datos (Ej: SQLite, PostgreSQL o MongoDB) para guardar el historial de trades, pnl y recuperar la sesión si el servidor se reinicia.
-2. **Backtesting Automatizado**: Adaptar el motor del simulador para que trague CSVs de 3 meses de antigüedad en 1 segundo y comprobar si la triple confluencia tiene *edge* positivo a largo plazo.
-3. **Modo Producción**: Incorporar un archivo `.env` seguro para las API Keys y cambiar la librería `ccxt` a modo ejecución para compras reales.
+1. **Trading Automático Real**: Incorporar el archivo `.env` seguro para las API Keys de Binance Futures y cambiar el core a modo ejecución, permitiendo inyectar capital real usando `ccxt`.
+2. **Backtesting Automatizado**: Módulo histórico en Python/JS para tragar datos de 3 años, optimizar parámetros como el tamaño del RSI o distancias del Bollinger y probar el edge matemático.
+3. **Métricas Avanzadas (Sharpe/Win-Rate)**: Dotar al Panel de Estadísticas Frontend de ratios de éxito y gráficos de curvas de capital (*equity curve*) calculados con los datos de Neon Postgres.
 
-¡Has construido una infraestructura de nivel institucional en tiempo récord! Descansa mi so, que mañana nos hacemos ricos. 💸
+¡El sistema ya cuenta con persistencia profesional, estrategias sofisticadas (Long/Short) y un frontend ultra responsivo! Estamos listos para dominar el mercado. 💸
