@@ -44,7 +44,7 @@
                 <div class="stats-grid">
                     <div class="stat-card">
                         <span class="stat-label">Balance Actual</span>
-                        <span class="stat-value" id="balance-val">100.00 USDT</span>
+                        <span class="stat-value" id="balance-val">Cargando...</span>
                     </div>
                     <div class="stat-card">
                         <span class="stat-label">PNL Hoy</span>
@@ -73,7 +73,7 @@
                 <div id="tv-chart"></div>
             </section>
 
-            <!-- Holographic Terminal Placeholder (Para el Prompt 04) -->
+            <!-- Holographic Terminal -->
             <section class="glass-panel terminal-panel" id="terminal-container">
                 <div class="terminal-header">
                     <h3>Terminal de Logs</h3>
@@ -83,7 +83,19 @@
                 </div>
                 <div class="terminal-body" id="logs-output">
                     <div class="log-line text-muted">> Esperando conexión SSE...</div>
-                    <div class="log-line text-muted">> El módulo de logs se implementará en la Fase 4.</div>
+                </div>
+            </section>
+
+            <!-- Historial de Operaciones -->
+            <section class="glass-panel history-panel" id="history-container">
+                <div class="terminal-header">
+                    <h3>Historial de Operaciones</h3>
+                    <div class="terminal-dots">
+                        <span></span><span></span><span></span>
+                    </div>
+                </div>
+                <div class="history-body" id="history-output">
+                    <div class="log-line text-muted">> Sin operaciones registradas...</div>
                 </div>
             </section>
 

@@ -5,19 +5,28 @@ const indicators = require('./indicators');
 const db = require('./db');
 
 /**
- * Calcula la probabilidad cuantitativa de entrada (0 a 100).
- * RSI Score (60%): 60 -> 0%, 30 -> 100%. 
- * Bollinger Score (40%): bbMid -> 0%, bbLower -> 100%.
- * Hard Veto: Si precio <= EMA200, retorna 0 (tendencia bajista).
+ * Calcula la probabilidad cuantitativa de entrada (0 a 100) y su dirección (LONG/SHORT).
+ * LONG: Si precio > EMA200. RSI Score: 60->0%, 30->100%. BB Score: bbMid->0%, bbLower->100%.
+ * SHORT: Si precio <= EMA200. RSI Score: 40->0%, 70->100%. BB Score: bbMid->0%, bbUpper->100%.
  */
-function calculateEntryProbability(currentPrice, rsi, bbMid, bbLower, ema200) {
-    if (!currentPrice || !rsi || !bbMid || !bbLower || !ema200) return 0.0;
-    if (currentPrice <= ema200) return 0.0;
+function calculateEntryProbability(currentPrice, rsi, bbMid, bbLower, bbUpper, ema200) {
+    if (!currentPrice || !rsi || !bbMid || !bbLower || !bbUpper || !ema200) return { score: 0.0, type: null };
 
-    const rsiScore = Math.max(0, Math.min(1, (60 - rsi) / (60 - 30)));
-    const bbScore  = Math.max(0, Math.min(1, (bbMid - currentPrice) / (bbMid - bbLower)));
-
-    return parseFloat(((rsiScore * 0.6 + bbScore * 0.4) * 100).toFixed(2));
+    if (currentPrice > ema200) {
+        const rsiScore = Math.max(0, Math.min(1, (60 - rsi) / (60 - 30)));
+        const bbScore  = Math.max(0, Math.min(1, (bbMid - currentPrice) / (bbMid - bbLower)));
+        return {
+            score: parseFloat(((rsiScore * 0.6 + bbScore * 0.4) * 100).toFixed(2)),
+            type: 'LONG'
+        };
+    } else {
+        const rsiScore = Math.max(0, Math.min(1, (rsi - 40) / (70 - 40)));
+        const bbScore  = Math.max(0, Math.min(1, (currentPrice - bbMid) / (bbUpper - bbMid)));
+        return {
+            score: parseFloat(((rsiScore * 0.6 + bbScore * 0.4) * 100).toFixed(2)),
+            type: 'SHORT'
+        };
+    }
 }
 
 class Simulator {
@@ -95,14 +104,14 @@ class Simulator {
         // Validamos si todos los indicadores están listos
         if (rsi && bollinger && ema200) {
             // Calcular probabilidad de entrada (para enviarla a UI)
-            const probability = calculateEntryProbability(
-                currentPrice, rsi, bollinger.middle, bollinger.lower, ema200
+            const { score: probability, type: signalType } = calculateEntryProbability(
+                currentPrice, rsi, bollinger.middle, bollinger.lower, bollinger.upper, ema200
             );
 
             // Heartbeat de mercado y acciones al CERRAR la vela de 1m
             if (kline.interval === '1m' && kline.isClosed) {
                 const decimals = symbol === 'PEPE/USDT' ? 8 : (symbol === 'DOGE/USDT' ? 4 : 2);
-                state.emit('log', `> [MERCADO] ${symbol} | Precio: ${currentPrice.toFixed(decimals)} | RSI: ${rsi.toFixed(2)} | BB inf: ${bollinger.lower.toFixed(decimals)} | EMA200: ${ema200.toFixed(decimals)} | Prob: ${probability.toFixed(2)}%`);
+                state.emit('log', `> [MERCADO] ${symbol} | Precio: ${currentPrice.toFixed(decimals)} | RSI: ${rsi.toFixed(2)} | BB inf: ${bollinger.lower.toFixed(decimals)} | EMA200: ${ema200.toFixed(decimals)} | Prob: ${probability.toFixed(2)}% (${signalType || 'N/A'})`);
                 
                 // Enviar a la gráfica para tiempo real
                 const candleTime = Math.floor(Date.now() / 60000) * 60;
@@ -119,10 +128,18 @@ class Simulator {
         for (let i = 0; i < state.activePositions.length; i++) {
             const pos = state.activePositions[i];
             if (pos && pos.symbol === symbol) {
-                if (currentPrice >= pos.targetTP) {
-                    this.executeSell(symbol, currentPrice, 'TAKE PROFIT', i);
-                } else if (currentPrice <= pos.targetSL) {
-                    this.executeSell(symbol, currentPrice, 'STOP LOSS', i);
+                if (pos.type === 'LONG') {
+                    if (currentPrice >= pos.targetTP) {
+                        this.executeSell(symbol, currentPrice, 'TAKE PROFIT', i);
+                    } else if (currentPrice <= pos.targetSL) {
+                        this.executeSell(symbol, currentPrice, 'STOP LOSS', i);
+                    }
+                } else if (pos.type === 'SHORT') {
+                    if (currentPrice <= pos.targetTP) {
+                        this.executeSell(symbol, currentPrice, 'TAKE PROFIT', i);
+                    } else if (currentPrice >= pos.targetSL) {
+                        this.executeSell(symbol, currentPrice, 'STOP LOSS', i);
+                    }
                 }
             }
         }
@@ -137,14 +154,15 @@ class Simulator {
             const ema200 = indicators.getEMA200(sym);
 
             if (!currentPrice || !rsi || !bollinger || !ema200) {
-                return { symbol: sym, score: 0 };
+                return { symbol: sym, score: 0, type: null };
             }
 
-            const score = calculateEntryProbability(currentPrice, rsi, bollinger.middle, bollinger.lower, ema200);
+            const entry = calculateEntryProbability(currentPrice, rsi, bollinger.middle, bollinger.lower, bollinger.upper, ema200);
             
             return {
                 symbol: sym,
-                score: score,
+                score: entry.score,
+                type: entry.type,
                 price: currentPrice
             };
         }));
@@ -162,15 +180,15 @@ class Simulator {
         for (const candidate of elegibles) {
             const freeSlotIndex = state.activePositions.findIndex(p => p === null);
             if (freeSlotIndex !== -1) {
-                this.executeBuy(candidate.symbol, candidate.price, candidate.score, freeSlotIndex);
+                this.executeBuy(candidate.symbol, candidate.price, candidate.score, freeSlotIndex, candidate.type);
             } else {
                 break; // No hay más slots libres
             }
         }
     }
 
-    executeBuy(symbol, price, probability, slotIndex) {
-        console.log(`[SIMULATOR] SEÑAL DE COMPRA EJECUTADA EN ${symbol} @ ${price} (SLOT ${slotIndex})`);
+    executeBuy(symbol, price, probability, slotIndex, type) {
+        console.log(`[SIMULATOR] SEÑAL DE ${type === 'LONG' ? 'COMPRA' : 'VENTA CORTA'} EJECUTADA EN ${symbol} @ ${price} (SLOT ${slotIndex})`);
         
         // Inversión: 50% del balance virtual actual
         const investmentAmount = state.virtualBalance / 2.0;
@@ -178,9 +196,15 @@ class Simulator {
         const investedUSDT = investmentAmount - fee; 
         const cryptoAmount = investedUSDT / price;
 
-        // Precalcular targets netos del Prompt 05 (+1.0% y -0.8% netos)
-        const targetTP = price * 1.012023;
-        const targetSL = price * 0.991983;
+        let targetTP, targetSL;
+        if (type === 'LONG') {
+            targetTP = price * 1.012023;
+            targetSL = price * 0.991983;
+        } else {
+            // SHORT: TP en +1.0% neto (precio baja ~1.20%), SL en -0.8% neto (precio sube ~0.80%)
+            targetTP = price * (1 - 0.012023); 
+            targetSL = price * (1 + 0.008017); 
+        }
 
         state.activePositions[slotIndex] = {
             symbol: symbol,
@@ -189,20 +213,29 @@ class Simulator {
             targetTP: targetTP,
             targetSL: targetSL,
             slotIndex: slotIndex,
-            originalInvestment: investmentAmount
+            originalInvestment: investmentAmount,
+            type: type
         };
         
-        state.emit('log', `[COMPRA] ${symbol} @ ${price} | Slot: ${slotIndex} | Inv: ${investedUSDT.toFixed(2)} USDT | Prob: ${probability.toFixed(2)}%`);
+        state.emit('log', `[${type}] ${symbol} @ ${price} | Slot: ${slotIndex} | Inv: ${investedUSDT.toFixed(2)} USDT | Prob: ${probability.toFixed(2)}%`);
         
         const candleTime = Math.floor(Date.now() / 60000) * 60;
-        state.emit('chart_data', { symbol, time: candleTime, price, signal: 'BUY', probability });
+        state.emit('chart_data', { symbol, time: candleTime, price, signal: type === 'LONG' ? 'BUY' : 'SHORT_ENTRY', probability });
     }
 
     executeSell(symbol, price, reason, slotIndex) {
         console.log(`[SIMULATOR] ${reason} EJECUTADO EN ${symbol} @ ${price} (SLOT ${slotIndex})`);
         
         const pos = state.activePositions[slotIndex];
-        const currentCryptoValue = pos.investedCrypto * price;
+        let currentCryptoValue;
+        
+        if (pos.type === 'LONG') {
+            currentCryptoValue = pos.investedCrypto * price;
+        } else {
+            // SHORT: Recuperamos la inversión más/menos la diferencia de precio
+            currentCryptoValue = (pos.originalInvestment - (pos.originalInvestment * 0.001)) + (pos.buyPrice - price) * pos.investedCrypto;
+        }
+        
         const netReturn = currentCryptoValue * 0.999; // Descontar 0.1% de fee de salida
 
         // El profit se calcula respecto al dinero real restado del balance al entrar
@@ -224,7 +257,18 @@ class Simulator {
         
         const signal = reason === 'TAKE PROFIT' ? 'SELL_TP' : 'SELL_SL';
         const candleTime = Math.floor(Date.now() / 60000) * 60;
-        state.emit('chart_data', { symbol, time: candleTime, price, signal, probability: 0 });
+        state.emit('chart_data', { symbol, time: candleTime, price, signal, type: pos.type, probability: 0 });
+
+        // Emitir evento para actualizar el historial
+        state.emit('trade_closed', {
+            symbol: symbol,
+            type: pos.type,
+            buyPrice: pos.buyPrice,
+            sellPrice: price,
+            reason: reason,
+            profit: profit,
+            balance: state.virtualBalance
+        });
 
         // Liberar el slot
         state.activePositions[slotIndex] = null;

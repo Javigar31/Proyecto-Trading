@@ -12,7 +12,7 @@ class BotState extends EventEmitter {
         this.virtualBalance = 100.0;
         
         // Estado de posiciones Dual-Slot (Máximo 2 posiciones a la vez)
-        // Estructura de cada slot: { symbol, buyPrice, investedCrypto, targetTP, targetSL, slotIndex, originalInvestment }
+        // Estructura de cada slot: { symbol, buyPrice, investedCrypto, targetTP, targetSL, slotIndex, originalInvestment, type }
         this.activePositions = [null, null]; 
         
         // Indicadores (diccionario por símbolo)

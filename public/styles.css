@@ -126,7 +126,7 @@ body {
     overflow: hidden;
 }
 
-.terminal-panel {
+.terminal-panel, .history-panel {
     grid-column: span 12;
     grid-row: span 2;
     background: rgba(15, 23, 42, 0.9); /* Darker for terminal */
@@ -142,7 +142,8 @@ body {
 @media (min-width: 1024px) {
     .control-panel { grid-column: span 4; }
     .stats-panel { grid-column: span 8; }
-    .terminal-panel { grid-column: span 12; }
+    .terminal-panel { grid-column: span 6; }
+    .history-panel { grid-column: span 6; }
 }
 
 /* --- Components --- */
@@ -330,6 +331,91 @@ h2 {
 }
 
 .text-muted { color: var(--text-muted); }
+
+/* --- History Items --- */
+.history-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    overflow-y: auto;
+    height: auto;
+    max-height: 400px;
+    padding-right: 0.5rem;
+}
+
+.history-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-glass);
+    border-radius: 8px;
+    padding: 1rem;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.5rem;
+    transition: transform var(--transition-smooth), box-shadow var(--transition-smooth), background var(--transition-smooth);
+    will-change: transform, opacity;
+    animation: slideIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+    opacity: 0;
+}
+
+.history-card:hover {
+    transform: translateY(-2px);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.history-card .row-header {
+    grid-column: span 2;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.25rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    padding-bottom: 0.5rem;
+}
+
+.history-card .symbol {
+    font-weight: 600;
+    font-size: 1rem;
+    color: var(--text-primary);
+}
+
+.history-card .type-long {
+    color: var(--color-success);
+    font-weight: bold;
+    font-size: 0.875rem;
+}
+
+.history-card .type-short {
+    color: var(--color-danger);
+    font-weight: bold;
+    font-size: 0.875rem;
+}
+
+.history-card .detail-label {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+}
+
+.history-card .detail-value {
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    font-weight: 500;
+    display: block;
+}
+
+.history-card .profit.positive { color: var(--color-success); }
+.history-card .profit.negative { color: var(--color-danger); }
 
 /* ─── Probability Meter ─────────────────────────────────── */
 .stats-grid {

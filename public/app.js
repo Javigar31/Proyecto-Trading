@@ -48,6 +48,9 @@ class DashboardController {
         this.logsOutput = document.getElementById('logs-output');
         this.logsOutput.innerHTML = ''; // Limpiar los placeholders de la UI
         
+        this.historyOutput = document.getElementById('history-output');
+        this.historyOutput.innerHTML = ''; // Limpiar placeholders
+        
         this.connectSSE();
     }
 
@@ -68,6 +71,15 @@ class DashboardController {
                     this.chartController.update(data.chart);
                     // Actualizar el medidor de probabilidad
                     this.updateProbability(data.chart.probability ?? 0);
+                }
+            }
+            if (data.tradeClosed) {
+                this.handleTradeClosed(data.tradeClosed);
+            }
+            if (data.balance !== undefined) {
+                const balanceEl = document.getElementById('balance-val');
+                if (balanceEl) {
+                    balanceEl.textContent = `${parseFloat(data.balance).toFixed(2)} USDT`;
                 }
             }
         };
@@ -136,6 +148,57 @@ class DashboardController {
         // Prevención de fugas de memoria: Máximo 100 líneas en el DOM
         while (this.logsOutput.children.length > 100) {
             this.logsOutput.removeChild(this.logsOutput.firstChild);
+        }
+    }
+
+    handleTradeClosed(trade) {
+        // Update balance immediately
+        if (trade.balance && document.getElementById('balance-val')) {
+            document.getElementById('balance-val').textContent = `${parseFloat(trade.balance).toFixed(2)} USDT`;
+        }
+
+        if (!this.historyOutput) return;
+
+        // Limpiar el estado de inicio si existe
+        if (this.historyOutput.children.length > 0 && this.historyOutput.children[0].textContent.includes('Sin operaciones')) {
+            this.historyOutput.innerHTML = '';
+        }
+
+        const isPositive = trade.profit > 0;
+        const profitClass = isPositive ? 'positive' : 'negative';
+        const profitSign = isPositive ? '+' : '';
+        const typeClass = trade.type === 'LONG' ? 'type-long' : 'type-short';
+
+        const card = document.createElement('div');
+        card.className = 'history-card';
+        card.innerHTML = `
+            <div class="row-header">
+                <span class="symbol">${trade.symbol}</span>
+                <span class="${typeClass}">${trade.type}</span>
+            </div>
+            <div>
+                <span class="detail-label">Entrada</span>
+                <span class="detail-value">${parseFloat(trade.buyPrice).toFixed(4)}</span>
+            </div>
+            <div>
+                <span class="detail-label">Salida</span>
+                <span class="detail-value">${parseFloat(trade.sellPrice).toFixed(4)}</span>
+            </div>
+            <div>
+                <span class="detail-label">Motivo</span>
+                <span class="detail-value">${trade.reason === 'TAKE PROFIT' ? 'TP' : 'SL'}</span>
+            </div>
+            <div>
+                <span class="detail-label">Profit</span>
+                <span class="detail-value profit ${profitClass}">${profitSign}${parseFloat(trade.profit).toFixed(2)} USDT</span>
+            </div>
+        `;
+
+        this.historyOutput.prepend(card);
+
+        // Keep maximum of 50 items for UI performance
+        while (this.historyOutput.children.length > 50) {
+            this.historyOutput.removeChild(this.historyOutput.lastChild);
         }
     }
 
@@ -249,18 +312,33 @@ class ChartController {
     }
 
     update(data) {
-        // data: { symbol, time, price, signal }
+        // data: { symbol, time, price, signal, type? }
         this.series.update({ time: data.time, value: data.price });
 
         if (data.signal !== 'WAITING') {
-            let marker = {
-                time: data.time,
-                position: data.signal === 'BUY' ? 'belowBar' : 'aboveBar',
-                color: data.signal === 'SELL_SL' ? '#ef4444' : '#22c55e',
-                shape: data.signal === 'BUY' ? 'arrowUp' : 'arrowDown',
-                text: data.signal === 'BUY' ? 'BUY' : (data.signal === 'SELL_TP' ? 'TP' : 'SL'),
-                size: 2
-            };
+            const isBuy = data.signal === 'BUY';
+            const isShortEntry = data.signal === 'SHORT_ENTRY';
+            const isTP = data.signal === 'SELL_TP';
+            const isSL = data.signal === 'SELL_SL';
+            
+            let position, color, shape, text;
+            
+            if (isBuy) {
+                position = 'belowBar'; color = '#22c55e'; shape = 'arrowUp'; text = 'BUY';
+            } else if (isShortEntry) {
+                position = 'aboveBar'; color = '#ef4444'; shape = 'arrowDown'; text = 'SHORT';
+            } else {
+                // EXITS
+                if (data.type === 'SHORT') {
+                    position = 'belowBar'; shape = 'arrowUp';
+                } else {
+                    position = 'aboveBar'; shape = 'arrowDown';
+                }
+                color = isTP ? '#22c55e' : '#ef4444';
+                text = isTP ? 'TP' : 'SL';
+            }
+            
+            let marker = { time: data.time, position, color, shape, text, size: 2 };
             this.markers.push(marker);
             this.series.setMarkers(this.markers);
         }

@@ -91,19 +91,37 @@ app.get('/api/logs', (req, res) => {
         res.write(`data: ${JSON.stringify({ chart: data })}\n\n`);
     };
 
+    const onTradeClosed = (data) => {
+        res.write(`data: ${JSON.stringify({ tradeClosed: data })}\n\n`);
+    };
+
     // Suscribir al EventEmitter del estado global
     state.on('log', onLog);
     state.on('chart_data', onChart);
+    state.on('trade_closed', onTradeClosed);
+    
+    // Enviar mensaje de conexión y el balance actual al cliente de inmediato
     res.write(`data: ${JSON.stringify({ message: '> Conexión SSE establecida con la Terminal Holográfica.' })}\n\n`);
+    res.write(`data: ${JSON.stringify({ balance: state.virtualBalance })}\n\n`);
 
     // Prevención de fugas de memoria: Limpiar al desconectar
     req.on('close', () => {
         state.removeListener('log', onLog);
         state.removeListener('chart_data', onChart);
+        state.removeListener('trade_closed', onTradeClosed);
     });
 });
 
+const db = require('./bot/db');
+
 // Inicio del servidor HTTP
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
+    try {
+        await db.initDB();
+        state.virtualBalance = await db.getBalance();
+        console.log(`[DB] Balance inicial cargado en el estado: ${state.virtualBalance} USDT`);
+    } catch (error) {
+        console.error('[SERVER] Error al inicializar la base de datos en el arranque:', error);
+    }
     console.log(`[SERVER] Panel de control escuchando en http://localhost:${PORT}`);
 });
