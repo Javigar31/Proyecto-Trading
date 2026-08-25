@@ -14,7 +14,7 @@ function calculateEntryProbability(currentPrice, rsi, bbMid, bbLower, bbUpper, e
 
     // Filtro Anti-Rango (BBW)
     const bbw = (bbUpper - bbLower) / bbMid;
-    if (bbw < 0.015) {
+    if (bbw < 0.003) {
         return { score: 0.0, type: 'NONE' };
     }
 
