@@ -114,15 +114,15 @@ class Simulator {
                 currentPrice, rsi, bollinger.middle, bollinger.lower, bollinger.upper, ema200
             );
 
+            // Enviar a la gráfica para tiempo real en CADA tick
+            const candleTime = Math.floor(Date.now() / 60000) * 60;
+            state.emit('chart_data', { symbol, time: candleTime, price: currentPrice, signal: 'WAITING', probability });
+
             // Heartbeat de mercado y acciones al CERRAR la vela de 1m
             if (kline.interval === '1m' && kline.isClosed) {
                 const decimals = symbol === 'PEPE/USDT' ? 8 : (symbol === 'DOGE/USDT' ? 4 : 2);
                 state.emit('log', `> [MERCADO] ${symbol} | Precio: ${currentPrice.toFixed(decimals)} | RSI: ${rsi.toFixed(2)} | BB inf: ${bollinger.lower.toFixed(decimals)} | EMA200: ${ema200.toFixed(decimals)} | Prob: ${probability.toFixed(2)}% (${signalType || 'N/A'})`);
                 
-                // Enviar a la gráfica para tiempo real
-                const candleTime = Math.floor(Date.now() / 60000) * 60;
-                state.emit('chart_data', { symbol, time: candleTime, price: currentPrice, signal: 'WAITING', probability });
-
                 // --- 2. EVALUAR ENTRADAS DE FORMA CONCURRENTE AL CERRAR VELA ---
                 this.evaluateMarketConcurrently().catch(err => console.error('[SIMULATOR] Error en evaluación concurrente:', err));
             }
