@@ -11,8 +11,14 @@ class BotState extends EventEmitter {
         // Cuentas Paper Trading
         this.virtualBalance = 100.0;
         
+        // Configuración de Riesgo y Apalancamiento (Futures V3.0)
+        this.LEVERAGE = 10;
+        this.FUTURE_FEE_RATE = 0.001; // 0.1% taker fee
+        this.TARGET_ROE_TP = 0.20;    // +20% ROE neto
+        this.TARGET_ROE_SL = -0.10;   // -10% ROE neto
+        
         // Estado de posiciones Dual-Slot (Máximo 2 posiciones a la vez)
-        // Estructura de cada slot: { symbol, buyPrice, investedCrypto, targetTP, targetSL, slotIndex, originalInvestment, type }
+        // Estructura de cada slot: { symbol, buyPrice, investedCrypto, targetTP, targetSL, slotIndex, allocatedMargin, feeIn, nominalSize, type }
         this.activePositions = [null, null]; 
         
         // Indicadores (diccionario por símbolo)

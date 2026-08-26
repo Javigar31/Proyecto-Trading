@@ -196,20 +196,38 @@ class Simulator {
     executeBuy(symbol, price, probability, slotIndex, type) {
         console.log(`[SIMULATOR] SEÑAL DE ${type === 'LONG' ? 'COMPRA' : 'VENTA CORTA'} EJECUTADA EN ${symbol} @ ${price} (SLOT ${slotIndex})`);
         
-        // Inversión: 50% del balance virtual actual
-        const investmentAmount = state.virtualBalance / 2.0;
-        const fee = investmentAmount * 0.001; // 0.1% de fee de Binance
-        const investedUSDT = investmentAmount - fee; 
-        const cryptoAmount = investedUSDT / price;
+        // 1. Margen Asimétrico
+        let allocatedMargin;
+        if (state.virtualBalance > 100.0) {
+            allocatedMargin = state.virtualBalance * 0.50; // 50%
+        } else {
+            allocatedMargin = 50.0;
+        }
+        
+        // Blindaje contra balances insuficientes
+        if (allocatedMargin > state.virtualBalance) {
+            allocatedMargin = state.virtualBalance;
+        }
+
+        // 2. Apalancamiento y Nominal
+        const nominalSize = allocatedMargin * state.LEVERAGE;
+        const feeIn = nominalSize * state.FUTURE_FEE_RATE;
+        const cryptoAmount = nominalSize / price;
+
+        // 3. Cálculos Dinámicos de ROE (TP/SL)
+        const L = state.LEVERAGE;
+        const f = state.FUTURE_FEE_RATE;
+        const P_entry = price;
 
         let targetTP, targetSL;
         if (type === 'LONG') {
-            targetTP = price * 1.022043;
-            targetSL = price * 0.991983;
+            // ROE = (P_exit/P_entry - 1)*L - L*f - (P_exit/P_entry)*L*f
+            targetTP = P_entry * ((state.TARGET_ROE_TP / L + 1 + f) / (1 - f));
+            targetSL = P_entry * ((state.TARGET_ROE_SL / L + 1 + f) / (1 - f));
         } else {
-            // SHORT: Risk/Reward 1:2 según parámetros V3
-            targetTP = price * 0.978001; 
-            targetSL = price * 1.008001; 
+            // SHORT: ROE = (1 - P_exit/P_entry)*L - L*f - (P_exit/P_entry)*L*f
+            targetTP = P_entry * ((1 - f - state.TARGET_ROE_TP / L) / (1 + f));
+            targetSL = P_entry * ((1 - f - state.TARGET_ROE_SL / L) / (1 + f));
         }
 
         state.activePositions[slotIndex] = {
@@ -219,11 +237,13 @@ class Simulator {
             targetTP: targetTP,
             targetSL: targetSL,
             slotIndex: slotIndex,
-            originalInvestment: investmentAmount,
+            allocatedMargin: allocatedMargin,
+            feeIn: feeIn,
+            nominalSize: nominalSize,
             type: type
         };
         
-        state.emit('log', `[${type}] ${symbol} @ ${price} | Slot: ${slotIndex} | Inv: ${investedUSDT.toFixed(2)} USDT | Prob: ${probability.toFixed(2)}%`);
+        state.emit('log', `[${type}] ${symbol} @ ${price} | Slot: ${slotIndex} | Margen: ${allocatedMargin.toFixed(2)} USDT | Nom: ${nominalSize.toFixed(2)} USDT`);
         
         const candleTime = Math.floor(Date.now() / 60000) * 60;
         state.emit('chart_data', { symbol, time: candleTime, price, signal: type === 'LONG' ? 'BUY' : 'SHORT_ENTRY', probability });
@@ -233,20 +253,18 @@ class Simulator {
         console.log(`[SIMULATOR] ${reason} EJECUTADO EN ${symbol} @ ${price} (SLOT ${slotIndex})`);
         
         const pos = state.activePositions[slotIndex];
-        let currentCryptoValue;
         
+        let pnlBruto;
         if (pos.type === 'LONG') {
-            currentCryptoValue = pos.investedCrypto * price;
+            pnlBruto = (price - pos.buyPrice) * pos.investedCrypto;
         } else {
-            // SHORT: Recuperamos la inversión más/menos la diferencia de precio
-            currentCryptoValue = (pos.originalInvestment - (pos.originalInvestment * 0.001)) + (pos.buyPrice - price) * pos.investedCrypto;
+            pnlBruto = (pos.buyPrice - price) * pos.investedCrypto;
         }
         
-        const netReturn = currentCryptoValue * 0.999; // Descontar 0.1% de fee de salida
+        const feeOut = (pos.investedCrypto * price) * state.FUTURE_FEE_RATE;
+        const pnlNeto = pnlBruto - pos.feeIn - feeOut;
 
-        // El profit se calcula respecto al dinero real restado del balance al entrar
-        const profit = netReturn - pos.originalInvestment; 
-        state.virtualBalance += profit;
+        state.virtualBalance += pnlNeto;
 
         // Persistencia asíncrona a la base de datos
         db.updateBalance(state.virtualBalance).catch(err => console.error('[DB] Error updateBalance:', err));
@@ -255,10 +273,10 @@ class Simulator {
             buyPrice: pos.buyPrice,
             sellPrice: price,
             exitReason: reason,
-            profitUsdt: profit
+            profitUsdt: pnlNeto
         }).catch(err => console.error('[DB] Error saveTrade:', err));
 
-        state.emit('log', `[${reason}] ${symbol} @ ${price} | Slot: ${slotIndex} | Retorno: ${netReturn.toFixed(2)} USDT | Profit: ${profit.toFixed(2)} USDT`);
+        state.emit('log', `[${reason}] ${symbol} @ ${price} | Slot: ${slotIndex} | Bruto: ${pnlBruto.toFixed(2)} | Fees: ${(pos.feeIn + feeOut).toFixed(2)} | Neto: ${pnlNeto.toFixed(2)} USDT`);
         state.emit('log', `> Nuevo Balance Total: ${state.virtualBalance.toFixed(2)} USDT`);
         
         const signal = reason === 'TAKE PROFIT' ? 'SELL_TP' : 'SELL_SL';
@@ -272,7 +290,7 @@ class Simulator {
             buyPrice: pos.buyPrice,
             sellPrice: price,
             reason: reason,
-            profit: profit,
+            profit: pnlNeto,
             balance: state.virtualBalance
         });
 

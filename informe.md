@@ -45,6 +45,16 @@ Durante esta intensa sesión de desarrollo, hemos pasado de un lienzo en blanco 
 - **Historial de Operaciones**: Inserción dinámica y fluida de operaciones cerradas usando Server-Sent Events sin recargar la página.
 - **Micro-interacciones**: Barridos animados (`slideIn`), etiquetado de color (Rojo para Shorts/Pérdidas, Verde para Longs/Ganancias) y gestión del DOM para proteger el rendimiento eliminando nodos sobrantes (límite de 50 filas).
 
+### 9. Optimización Cuantitativa V3.0
+- **Filtro Anti-Rango (BBW)**: Implementación de un escudo de volatilidad. El bot bloquea operativas si el Ancho de Banda de Bollinger (BBW) es menor a `0.003` (amplitud del 0.3%), previniendo desangre por spread en mercados estancados.
+- **Curvas de Probabilidad Ajustadas**: Desplazamiento de los puntos críticos del oscilador RSI para que exija un mayor momentum (RSI < 25 para compras, RSI > 75 para ventas).
+- **Umbral de Calidad**: Aumento del umbral de entrada al `90%`, reduciendo la frecuencia pero aumentando drásticamente la calidad y probabilidad de acierto de los setups.
+
+### 10. Futures V3.0 (Apalancamiento y Margen Asimétrico)
+- **Margen Asimétrico Defensivo**: Algoritmo dinámico de Position Sizing. Si el balance es mayor a `100 USDT`, se invierte agresivamente el `50%`. Si cae de `100 USDT`, el bot entra en modo supervivencia operando con solo `50 USDT` fijos (con protecciones anti-saldo-negativo).
+- **Apalancamiento Real 10x**: Cálculo del tamaño Nominal apalancado multiplicando el margen por 10, definiendo con exactitud milimétrica la cantidad de criptos que el bot adquiere simulando un contrato futuro real.
+- **Fórmulas de Liquidación y ROE Neto**: Despliegue de matemática *Quant* para fijar el `Take Profit` (ROE +20%) y `Stop Loss` (ROE -10%), calculando algebraicamente el PNL Neto descontando los Taker Fees de entrada (0.1%) y salida (0.1%) del volumen nominal de la operación.
+
 ---
 
 ## 📊 Estado Actual del Proyecto
