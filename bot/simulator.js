@@ -3,13 +3,14 @@ const ccxt = require('ccxt');
 const { state, WHITELIST } = require('./state');
 const indicators = require('./indicators');
 const db = require('./db');
+const PriceActionEngine = require('./PriceActionEngine');
 
 /**
  * Calcula la probabilidad cuantitativa de entrada (0 a 100) y su dirección (LONG/SHORT).
  * LONG: Si precio > EMA200. RSI Score: 60->0%, 30->100%. BB Score: bbMid->0%, bbLower->100%.
  * SHORT: Si precio <= EMA200. RSI Score: 40->0%, 70->100%. BB Score: bbMid->0%, bbUpper->100%.
  */
-function calculateEntryProbability(currentPrice, rsi, bbMid, bbLower, bbUpper, ema200) {
+function calculateEntryProbability(currentPrice, rsi, bbMid, bbLower, bbUpper, ema200, paData) {
     if (!currentPrice || !rsi || !bbMid || !bbLower || !bbUpper || !ema200) return { score: 0.0, type: null };
 
     // Filtro Anti-Rango (BBW)
@@ -21,16 +22,44 @@ function calculateEntryProbability(currentPrice, rsi, bbMid, bbLower, bbUpper, e
     if (currentPrice > ema200) {
         const rsiScore = Math.max(0, Math.min(1, (45 - rsi) / (45 - 25)));
         const bbScore  = Math.max(0, Math.min(1, (bbMid - currentPrice) / (bbMid - bbLower)));
+        let score = parseFloat(((rsiScore * 0.6 + bbScore * 0.4) * 100).toFixed(2));
+        
+        let paPattern = null;
+        if (paData) {
+            if (paData.direction === 1) score += paData.scoreModifier;
+            else if (paData.direction === -1) score -= paData.scoreModifier;
+            
+            if (score >= 90 && paData.direction === 1 && paData.scoreModifier > 0) {
+                paPattern = paData.pattern;
+            }
+        }
+        score = Math.min(99.0, score);
+        
         return {
-            score: parseFloat(((rsiScore * 0.6 + bbScore * 0.4) * 100).toFixed(2)),
-            type: 'LONG'
+            score: parseFloat(score.toFixed(2)),
+            type: 'LONG',
+            paPattern: paPattern
         };
     } else {
         const rsiScore = Math.max(0, Math.min(1, (rsi - 55) / (75 - 55)));
         const bbScore  = Math.max(0, Math.min(1, (currentPrice - bbMid) / (bbUpper - bbMid)));
+        let score = parseFloat(((rsiScore * 0.6 + bbScore * 0.4) * 100).toFixed(2));
+        
+        let paPattern = null;
+        if (paData) {
+            if (paData.direction === -1) score += paData.scoreModifier;
+            else if (paData.direction === 1) score -= paData.scoreModifier;
+            
+            if (score >= 90 && paData.direction === -1 && paData.scoreModifier > 0) {
+                paPattern = paData.pattern;
+            }
+        }
+        score = Math.min(99.0, score);
+        
         return {
-            score: parseFloat(((rsiScore * 0.6 + bbScore * 0.4) * 100).toFixed(2)),
-            type: 'SHORT'
+            score: parseFloat(score.toFixed(2)),
+            type: 'SHORT',
+            paPattern: paPattern
         };
     }
 }
@@ -109,9 +138,12 @@ class Simulator {
 
         // Validamos si todos los indicadores están listos
         if (rsi && bollinger && ema200) {
+            const candles = indicators.getCandles(symbol);
+            const paData = PriceActionEngine.analyzePatterns(candles);
+            
             // Calcular probabilidad de entrada (para enviarla a UI)
             const { score: probability, type: signalType } = calculateEntryProbability(
-                currentPrice, rsi, bollinger.middle, bollinger.lower, bollinger.upper, ema200
+                currentPrice, rsi, bollinger.middle, bollinger.lower, bollinger.upper, ema200, paData
             );
 
             // Enviar a la gráfica para tiempo real en CADA tick
@@ -160,16 +192,19 @@ class Simulator {
             const ema200 = indicators.getEMA200(sym);
 
             if (!currentPrice || !rsi || !bollinger || !ema200) {
-                return { symbol: sym, score: 0, type: null };
+                return { symbol: sym, score: 0, type: null, paPattern: null };
             }
 
-            const entry = calculateEntryProbability(currentPrice, rsi, bollinger.middle, bollinger.lower, bollinger.upper, ema200);
+            const candles = indicators.getCandles(sym);
+            const paData = PriceActionEngine.analyzePatterns(candles);
+            const entry = calculateEntryProbability(currentPrice, rsi, bollinger.middle, bollinger.lower, bollinger.upper, ema200, paData);
             
             return {
                 symbol: sym,
                 score: entry.score,
                 type: entry.type,
-                price: currentPrice
+                price: currentPrice,
+                paPattern: entry.paPattern
             };
         }));
 
@@ -186,6 +221,9 @@ class Simulator {
         for (const candidate of elegibles) {
             const freeSlotIndex = state.activePositions.findIndex(p => p === null);
             if (freeSlotIndex !== -1) {
+                if (candidate.paPattern) {
+                    state.emit('log', `[ACCIÓN DE PRECIO] Gatillo de francotirador activado por patrón: ${candidate.paPattern}`);
+                }
                 this.executeBuy(candidate.symbol, candidate.price, candidate.score, freeSlotIndex, candidate.type);
             } else {
                 break; // No hay más slots libres

@@ -35,6 +35,10 @@ function connectToBinance() {
                 symbol: symbol,
                 interval: klineData.i,
                 close: klineData.c,
+                open: klineData.o,
+                high: klineData.h,
+                low: klineData.l,
+                volume: klineData.v,
                 isClosed: klineData.x
             };
 
