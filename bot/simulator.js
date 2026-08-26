@@ -121,7 +121,7 @@ class Simulator {
 
         // Actualizar indicadores
         if (kline.interval === '1m') {
-            indicators.update1m(symbol, currentPrice, kline.isClosed);
+            indicators.update1m(symbol, kline, kline.isClosed);
         } else if (kline.interval === '5m') {
             indicators.update5m(symbol, currentPrice, kline.isClosed);
         }
