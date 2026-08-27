@@ -324,6 +324,7 @@ h2 {
     height: auto;
     overflow-y: auto;
     color: var(--color-success);
+    max-height: 100%;
 }
 
 .log-line {
@@ -339,7 +340,7 @@ h2 {
     gap: 0.75rem;
     overflow-y: auto;
     height: auto;
-    max-height: 400px;
+    max-height: 100%;
     padding-right: 0.5rem;
 }
 
