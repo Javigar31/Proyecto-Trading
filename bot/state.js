@@ -21,6 +21,9 @@ class BotState extends EventEmitter {
         // Estructura de cada slot: { symbol, buyPrice, investedCrypto, targetTP, targetSL, slotIndex, allocatedMargin, feeIn, nominalSize, type }
         this.activePositions = [null, null]; 
         
+        // Cooldowns anti-ametrallamiento (diccionario por símbolo)
+        this.cooldowns = {};
+        
         // Indicadores (diccionario por símbolo)
         this.indicators = {};
         WHITELIST.forEach(symbol => {

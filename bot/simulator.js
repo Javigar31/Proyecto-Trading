@@ -142,9 +142,15 @@ class Simulator {
             const paData = PriceActionEngine.analyzePatterns(candles);
             
             // Calcular probabilidad de entrada (para enviarla a UI)
-            const { score: probability, type: signalType } = calculateEntryProbability(
+            let { score: probability, type: signalType } = calculateEntryProbability(
                 currentPrice, rsi, bollinger.middle, bollinger.lower, bollinger.upper, ema200, paData
             );
+
+            // Bloqueo de entrada si está en cooldown
+            if (state.cooldowns[symbol] && Date.now() < state.cooldowns[symbol]) {
+                probability = 0.0;
+                signalType = 'COOLDOWN';
+            }
 
             // Enviar a la gráfica para tiempo real en CADA tick
             const candleTime = Math.floor(Date.now() / 60000) * 60;
@@ -186,6 +192,11 @@ class Simulator {
     async evaluateMarketConcurrently() {
         // Promesas concurrentes para evaluar todos los símbolos
         const evaluations = await Promise.all(WHITELIST.map(async (sym) => {
+            // Verificar cooldown
+            if (state.cooldowns[sym] && Date.now() < state.cooldowns[sym]) {
+                return { symbol: sym, score: 0, type: null, paPattern: null };
+            }
+
             const currentPrice = state.indicators[sym].currentPrice;
             const rsi = indicators.getRSI(sym);
             const bollinger = indicators.getBollinger(sym);
@@ -303,6 +314,12 @@ class Simulator {
         const pnlNeto = pnlBruto - pos.feeIn - feeOut;
 
         state.virtualBalance += pnlNeto;
+
+        // Sistema de Cooldown Anti-Ametrallamiento
+        if (reason === 'STOP LOSS') {
+            state.cooldowns[symbol] = Date.now() + (15 * 60 * 1000);
+            state.emit('log', `[COOLDOWN] ${symbol} en enfriamiento por 15m tras SL.`);
+        }
 
         // Persistencia asíncrona a la base de datos
         db.updateBalance(state.virtualBalance).catch(err => console.error('[DB] Error updateBalance:', err));
