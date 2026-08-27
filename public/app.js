@@ -86,7 +86,15 @@ class DashboardController {
 
         this.eventSource.onerror = (error) => {
             console.error('SSE Error:', error);
-            this.appendLog('> [ERROR] Conexión con Terminal perdida. Reconectando en 5s...', 'error');
+            
+            // UI Resiliente: Actualizar badge en vez de reload (Prompt 17)
+            if (this.statusText) {
+                this.statusText.textContent = 'Reconectando panel...';
+                this.statusText.style.color = 'orange';
+                if (this.statusDot) this.statusDot.classList.remove('active');
+            }
+            
+            this.appendLog('> [ERROR] Conexión con Terminal perdida. Reconectando...', 'error');
             
             // Cerrar la conexión defectuosa
             this.eventSource.close();

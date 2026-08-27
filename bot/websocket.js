@@ -60,6 +60,7 @@ function connectToBinance() {
         // Auto-reconexión si el bot sigue corriendo
         if (state.isBotRunning) {
             console.log('[WS] Reconectando en 5s...');
+            state.emit('log', '> [SISTEMA] Reconectando a Binance WebSockets...');
             setTimeout(connectToBinance, 5000);
         }
     });

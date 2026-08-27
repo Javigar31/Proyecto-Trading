@@ -100,12 +100,18 @@ app.get('/api/logs', (req, res) => {
     state.on('chart_data', onChart);
     state.on('trade_closed', onTradeClosed);
     
+    // Heartbeat Keep-Alive cada 30 segundos
+    const keepAlive = setInterval(() => {
+        res.write(':\n\n'); // Comentario SSE para mantener viva la conexión
+    }, 30000);
+    
     // Enviar mensaje de conexión y el balance actual al cliente de inmediato
     res.write(`data: ${JSON.stringify({ message: '> Conexión SSE establecida con la Terminal Holográfica.' })}\n\n`);
     res.write(`data: ${JSON.stringify({ balance: state.virtualBalance })}\n\n`);
 
     // Prevención de fugas de memoria: Limpiar al desconectar
     req.on('close', () => {
+        clearInterval(keepAlive);
         state.removeListener('log', onLog);
         state.removeListener('chart_data', onChart);
         state.removeListener('trade_closed', onTradeClosed);
