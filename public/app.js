@@ -361,6 +361,18 @@ class ChartController {
 }
 
 // Inicializar el controlador principal
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     window.app = new DashboardController();
+    
+    // Sincronización de estado frontend-backend (Prompt 20)
+    try {
+        const response = await fetch('/api/status');
+        if (response.ok) {
+            const data = await response.json();
+            window.app.isBotRunning = data.isRunning;
+            window.app.updateUI();
+        }
+    } catch (error) {
+        console.error('Error sincronizando estado con el servidor:', error);
+    }
 });

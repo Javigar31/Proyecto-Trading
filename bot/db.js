@@ -44,6 +44,12 @@ async function initDB() {
             await client.query('INSERT INTO bot_state (id, virtual_balance) VALUES (1, 100.00);');
         }
 
+        // Añadir columnas de telemetría si no existen
+        await client.query(`
+            ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS last_ping TIMESTAMP WITH TIME ZONE;
+            ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS slots_in_use INTEGER DEFAULT 0;
+        `);
+
         await client.query('COMMIT');
         console.log('[DB] Base de datos inicializada correctamente.');
     } catch (error) {
@@ -82,10 +88,25 @@ async function saveTrade(tradeData) {
     );
 }
 
+/**
+ * Actualiza el latido de telemetría y operaciones vivas.
+ */
+async function updateHeartbeat(slotsInUse) {
+    try {
+        await pool.query(
+            'UPDATE bot_state SET last_ping = CURRENT_TIMESTAMP, slots_in_use = $1 WHERE id = 1;',
+            [slotsInUse]
+        );
+    } catch (err) {
+        console.error('[DB] Error updateHeartbeat:', err);
+    }
+}
+
 module.exports = {
     pool,
     initDB,
     getBalance,
     updateBalance,
-    saveTrade
+    saveTrade,
+    updateHeartbeat
 };

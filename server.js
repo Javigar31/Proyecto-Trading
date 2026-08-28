@@ -74,6 +74,11 @@ app.post('/api/stop', (req, res) => {
     });
 });
 
+// Endpoint para sincronización de estado frontend-backend (Prompt 20)
+app.get('/api/status', (req, res) => {
+    res.json({ isRunning: state.isBotRunning });
+});
+
 // Endpoint SSE para la Terminal Holográfica
 app.get('/api/logs', (req, res) => {
     // Configurar cabeceras obligatorias para Server-Sent Events

@@ -69,6 +69,14 @@ function calculateEntryProbability(currentPrice, rsi, bbMid, bbLower, bbUpper, e
 class Simulator {
     constructor() {
         this.exchange = new ccxt.binance();
+        
+        // Telemetría remota (Heartbeat) cada 5 minutos
+        setInterval(() => {
+            if (state.isBotRunning) {
+                const slotsInUse = state.activePositions.filter(p => p !== null).length;
+                db.updateHeartbeat(slotsInUse);
+            }
+        }, 5 * 60 * 1000);
     }
 
     async warmupSymbol(symbol) {
