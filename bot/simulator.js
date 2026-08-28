@@ -26,8 +26,9 @@ function calculateEntryProbability(currentPrice, rsi, bbMid, bbLower, bbUpper, e
         
         let paPattern = null;
         if (paData) {
-            if (paData.direction === 1) score += paData.scoreModifier;
-            else if (paData.direction === -1) score -= paData.scoreModifier;
+            // Rollback (Prompt 18): Neutralización matemática, el patrón solo es visual/informativo
+            // if (paData.direction === 1) score += paData.scoreModifier;
+            // else if (paData.direction === -1) score -= paData.scoreModifier;
             
             if (score >= 90 && paData.direction === 1 && paData.scoreModifier > 0) {
                 paPattern = paData.pattern;
@@ -47,8 +48,9 @@ function calculateEntryProbability(currentPrice, rsi, bbMid, bbLower, bbUpper, e
         
         let paPattern = null;
         if (paData) {
-            if (paData.direction === -1) score += paData.scoreModifier;
-            else if (paData.direction === 1) score -= paData.scoreModifier;
+            // Rollback (Prompt 18): Neutralización matemática, el patrón solo es visual/informativo
+            // if (paData.direction === -1) score += paData.scoreModifier;
+            // else if (paData.direction === 1) score -= paData.scoreModifier;
             
             if (score >= 90 && paData.direction === -1 && paData.scoreModifier > 0) {
                 paPattern = paData.pattern;
