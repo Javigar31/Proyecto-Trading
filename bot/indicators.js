@@ -18,6 +18,7 @@ class IndicatorEngine {
         this.closes5m[symbol] = klines5m.map(k => k[4]).slice(-this.maxBuffer5m);
         
         this.candles1m[symbol] = klines1m.map(k => ({
+            time: Math.floor(k[0] / 1000),
             open: k[1],
             high: k[2],
             low: k[3],
@@ -36,6 +37,7 @@ class IndicatorEngine {
         
         const closePrice = parseFloat(klineData.close);
         const candle = {
+            time: klineData.time,
             open: parseFloat(klineData.open),
             high: parseFloat(klineData.high),
             low: parseFloat(klineData.low),

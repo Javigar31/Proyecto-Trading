@@ -34,11 +34,24 @@ class DashboardController {
         // Manejo del selector de activo
         this.symbolSelect = document.getElementById('chart-symbol-select');
         this.activeSymbol = this.symbolSelect.value;
-        this.symbolSelect.addEventListener('change', (e) => {
+        this.symbolSelect.addEventListener('change', async (e) => {
             this.activeSymbol = e.target.value;
             this.chartController.clear();
             // Resetear medidor al cambiar de moneda
             this.updateProbability(0);
+            
+            // Hidratar gráfica con historial (Prompt 21)
+            try {
+                const response = await fetch(`/api/chart-history?symbol=${encodeURIComponent(this.activeSymbol)}`);
+                if (response.ok) {
+                    const result = await response.json();
+                    if (result.status === 'success' && result.data.length > 0) {
+                        this.chartController.setHistoricalData(result.data);
+                    }
+                }
+            } catch (err) {
+                console.error('Error fetching chart history:', err);
+            }
         });
 
         this.initTerminal();
@@ -358,6 +371,22 @@ class ChartController {
         this.markers = [];
         this.series.setMarkers([]);
     }
+
+    setHistoricalData(data) {
+        // data debe ser un array de objetos { time, value }
+        const sortedData = data.sort((a, b) => a.time - b.time);
+        
+        const uniqueData = [];
+        const seenTimes = new Set();
+        for (const item of sortedData) {
+            if (!seenTimes.has(item.time)) {
+                seenTimes.add(item.time);
+                uniqueData.push(item);
+            }
+        }
+
+        this.series.setData(uniqueData);
+    }
 }
 
 // Inicializar el controlador principal
@@ -371,6 +400,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             const data = await response.json();
             window.app.isBotRunning = data.isRunning;
             window.app.updateUI();
+            
+            // Si el bot está corriendo, hidratar gráfica al cargar (Prompt 21)
+            if (data.isRunning) {
+                window.app.symbolSelect.dispatchEvent(new Event('change'));
+            }
         }
     } catch (error) {
         console.error('Error sincronizando estado con el servidor:', error);

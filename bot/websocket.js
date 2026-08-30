@@ -33,6 +33,7 @@ function connectToBinance() {
             
             const kline = {
                 symbol: symbol,
+                time: Math.floor(klineData.t / 1000),
                 interval: klineData.i,
                 close: klineData.c,
                 open: klineData.o,

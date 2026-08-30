@@ -79,6 +79,30 @@ app.get('/api/status', (req, res) => {
     res.json({ isRunning: state.isBotRunning });
 });
 
+// Endpoint para hidratación histórica de gráfica (Prompt 21)
+app.get('/api/chart-history', (req, res) => {
+    const symbol = req.query.symbol;
+    if (!symbol) {
+        return res.status(400).json({ status: 'error', message: 'Symbol is required' });
+    }
+
+    const { WHITELIST } = require('./bot/state');
+    if (!WHITELIST.includes(symbol)) {
+        return res.status(400).json({ status: 'error', message: 'Invalid symbol' });
+    }
+
+    const indicators = require('./bot/indicators');
+    const candles = indicators.getCandles(symbol);
+    
+    // Formato requerido por Lightweight Charts: { time, value }
+    const chartData = candles.map(c => ({
+        time: c.time,
+        value: c.close
+    }));
+
+    res.json({ status: 'success', data: chartData });
+});
+
 // Endpoint SSE para la Terminal Holográfica
 app.get('/api/logs', (req, res) => {
     // Configurar cabeceras obligatorias para Server-Sent Events
