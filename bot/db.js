@@ -8,6 +8,11 @@ const pool = new Pool({
     }
 });
 
+// Listener global para atrapar errores en clientes inactivos y evitar crasheos (Prompt 22)
+pool.on('error', (err, client) => {
+    console.error('[DB] Error inesperado en cliente inactivo:', err.message);
+});
+
 /**
  * Inicializa la base de datos creando las tablas si no existen
  * y asegura que haya un balance inicial.
