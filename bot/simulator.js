@@ -13,27 +13,28 @@ const PriceActionEngine = require('./PriceActionEngine');
 function calculateEntryProbability(currentPrice, rsi, bbMid, bbLower, bbUpper, ema200, paData) {
     if (!currentPrice || !rsi || !bbMid || !bbLower || !bbUpper || !ema200) return { score: 0.0, type: null };
 
-    // Filtro Anti-Rango (BBW)
+    // Filtro Anti-Rango (BBW) aumentado a 0.015 (Optimización v3.0)
     const bbw = (bbUpper - bbLower) / bbMid;
-    if (bbw < 0.003) {
+    if (bbw < 0.015) {
         return { score: 0.0, type: 'NONE' };
     }
 
     if (currentPrice > ema200) {
+        // Sistema de Veto: Si hay patrón bajista en tendencia alcista, se bloquea la entrada.
+        if (paData && paData.direction === -1) {
+            return { score: 0.0, type: 'VETO_PA' };
+        }
+
         const rsiScore = Math.max(0, Math.min(1, (45 - rsi) / (45 - 25)));
         const bbScore  = Math.max(0, Math.min(1, (bbMid - currentPrice) / (bbMid - bbLower)));
         let score = parseFloat(((rsiScore * 0.6 + bbScore * 0.4) * 100).toFixed(2));
         
         let paPattern = null;
-        if (paData) {
-            // Rollback (Prompt 18): Neutralización matemática, el patrón solo es visual/informativo
-            // if (paData.direction === 1) score += paData.scoreModifier;
-            // else if (paData.direction === -1) score -= paData.scoreModifier;
-            
-            if (score >= 90 && paData.direction === 1 && paData.scoreModifier > 0) {
-                paPattern = paData.pattern;
-            }
+        // El patrón es meramente informativo y solo se envía si acompaña y el score base ya es >= 90
+        if (paData && paData.direction === 1 && score >= 90) {
+            paPattern = paData.pattern;
         }
+        
         score = Math.min(99.0, score);
         
         return {
@@ -42,20 +43,20 @@ function calculateEntryProbability(currentPrice, rsi, bbMid, bbLower, bbUpper, e
             paPattern: paPattern
         };
     } else {
+        // Sistema de Veto: Si hay patrón alcista en tendencia bajista, se bloquea la entrada.
+        if (paData && paData.direction === 1) {
+            return { score: 0.0, type: 'VETO_PA' };
+        }
+
         const rsiScore = Math.max(0, Math.min(1, (rsi - 55) / (75 - 55)));
         const bbScore  = Math.max(0, Math.min(1, (currentPrice - bbMid) / (bbUpper - bbMid)));
         let score = parseFloat(((rsiScore * 0.6 + bbScore * 0.4) * 100).toFixed(2));
         
         let paPattern = null;
-        if (paData) {
-            // Rollback (Prompt 18): Neutralización matemática, el patrón solo es visual/informativo
-            // if (paData.direction === -1) score += paData.scoreModifier;
-            // else if (paData.direction === 1) score -= paData.scoreModifier;
-            
-            if (score >= 90 && paData.direction === -1 && paData.scoreModifier > 0) {
-                paPattern = paData.pattern;
-            }
+        if (paData && paData.direction === -1 && score >= 90) {
+            paPattern = paData.pattern;
         }
+        
         score = Math.min(99.0, score);
         
         return {
