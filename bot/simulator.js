@@ -159,15 +159,13 @@ class Simulator {
             const candleTime = Math.floor(Date.now() / 60000) * 60;
             state.emit('chart_data', { symbol, time: candleTime, price: currentPrice, signal: 'WAITING', probability });
 
-            // Log de telemetría constante para evitar silencio absoluto (Prompt 24)
-            if (kline.interval === '1m') {
+            // Log de telemetría y acciones al CERRAR la vela de 1m
+            if (kline.interval === '1m' && kline.isClosed) {
                 const decimals = symbol === 'PEPE/USDT' ? 8 : (symbol === 'DOGE/USDT' ? 4 : 2);
                 state.emit('log', `> [MERCADO] ${symbol} | Precio: ${currentPrice.toFixed(decimals)} | RSI: ${rsi.toFixed(2)} | BB inf: ${bollinger.lower.toFixed(decimals)} | EMA200: ${ema200.toFixed(decimals)} | Prob: ${probability.toFixed(2)}% (${signalType || 'N/A'})`);
                 
                 // --- 2. EVALUAR ENTRADAS DE FORMA CONCURRENTE SOLO AL CERRAR VELA ---
-                if (kline.isClosed) {
-                    this.evaluateMarketConcurrently().catch(err => console.error('[SIMULATOR] Error en evaluación concurrente:', err));
-                }
+                this.evaluateMarketConcurrently().catch(err => console.error('[SIMULATOR] Error en evaluación concurrente:', err));
             }
         }
     }
