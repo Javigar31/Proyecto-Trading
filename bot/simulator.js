@@ -13,58 +13,50 @@ const PriceActionEngine = require('./PriceActionEngine');
 function calculateEntryProbability(currentPrice, rsi, bbMid, bbLower, bbUpper, ema200, paData) {
     if (!currentPrice || !rsi || !bbMid || !bbLower || !bbUpper || !ema200) return { score: 0.0, type: null };
 
-    // Filtro Anti-Rango (BBW) aumentado a 0.015 (Optimización v3.0)
     const bbw = (bbUpper - bbLower) / bbMid;
-    if (bbw < 0.015) {
-        return { score: 0.0, type: 'NONE' };
-    }
+    const isVolatile = bbw >= 0.015;
+
+    let score = 0.0;
+    let type = 'NONE';
+    let paPattern = null;
 
     if (currentPrice > ema200) {
-        // Sistema de Veto: Si hay patrón bajista en tendencia alcista, se bloquea la entrada.
-        if (paData && paData.direction === -1) {
-            return { score: 0.0, type: 'VETO_PA' };
+        if (!isVolatile) {
+            type = 'NONE';
+        } else if (paData && paData.direction === -1) {
+            type = 'VETO_PA';
+        } else {
+            const rsiScore = Math.max(0, Math.min(1, (45 - rsi) / (45 - 25)));
+            const bbScore  = Math.max(0, Math.min(1, (bbMid - currentPrice) / (bbMid - bbLower)));
+            score = parseFloat(((rsiScore * 0.6 + bbScore * 0.4) * 100).toFixed(2));
+            type = 'LONG';
+            
+            if (paData && paData.direction === 1 && score >= 90) {
+                paPattern = paData.pattern;
+            }
         }
-
-        const rsiScore = Math.max(0, Math.min(1, (45 - rsi) / (45 - 25)));
-        const bbScore  = Math.max(0, Math.min(1, (bbMid - currentPrice) / (bbMid - bbLower)));
-        let score = parseFloat(((rsiScore * 0.6 + bbScore * 0.4) * 100).toFixed(2));
-        
-        let paPattern = null;
-        // El patrón es meramente informativo y solo se envía si acompaña y el score base ya es >= 90
-        if (paData && paData.direction === 1 && score >= 90) {
-            paPattern = paData.pattern;
-        }
-        
-        score = Math.min(99.0, score);
-        
-        return {
-            score: parseFloat(score.toFixed(2)),
-            type: 'LONG',
-            paPattern: paPattern
-        };
     } else {
-        // Sistema de Veto: Si hay patrón alcista en tendencia bajista, se bloquea la entrada.
-        if (paData && paData.direction === 1) {
-            return { score: 0.0, type: 'VETO_PA' };
+        if (!isVolatile) {
+            type = 'NONE';
+        } else if (paData && paData.direction === 1) {
+            type = 'VETO_PA';
+        } else {
+            const rsiScore = Math.max(0, Math.min(1, (rsi - 55) / (75 - 55)));
+            const bbScore  = Math.max(0, Math.min(1, (currentPrice - bbMid) / (bbUpper - bbMid)));
+            score = parseFloat(((rsiScore * 0.6 + bbScore * 0.4) * 100).toFixed(2));
+            type = 'SHORT';
+            
+            if (paData && paData.direction === -1 && score >= 90) {
+                paPattern = paData.pattern;
+            }
         }
-
-        const rsiScore = Math.max(0, Math.min(1, (rsi - 55) / (75 - 55)));
-        const bbScore  = Math.max(0, Math.min(1, (currentPrice - bbMid) / (bbUpper - bbMid)));
-        let score = parseFloat(((rsiScore * 0.6 + bbScore * 0.4) * 100).toFixed(2));
-        
-        let paPattern = null;
-        if (paData && paData.direction === -1 && score >= 90) {
-            paPattern = paData.pattern;
-        }
-        
-        score = Math.min(99.0, score);
-        
-        return {
-            score: parseFloat(score.toFixed(2)),
-            type: 'SHORT',
-            paPattern: paPattern
-        };
     }
+
+    return {
+        score: Math.min(99.0, score),
+        type: type,
+        paPattern: paPattern
+    };
 }
 
 class Simulator {
@@ -167,13 +159,15 @@ class Simulator {
             const candleTime = Math.floor(Date.now() / 60000) * 60;
             state.emit('chart_data', { symbol, time: candleTime, price: currentPrice, signal: 'WAITING', probability });
 
-            // Heartbeat de mercado y acciones al CERRAR la vela de 1m
-            if (kline.interval === '1m' && kline.isClosed) {
+            // Log de telemetría constante para evitar silencio absoluto (Prompt 24)
+            if (kline.interval === '1m') {
                 const decimals = symbol === 'PEPE/USDT' ? 8 : (symbol === 'DOGE/USDT' ? 4 : 2);
                 state.emit('log', `> [MERCADO] ${symbol} | Precio: ${currentPrice.toFixed(decimals)} | RSI: ${rsi.toFixed(2)} | BB inf: ${bollinger.lower.toFixed(decimals)} | EMA200: ${ema200.toFixed(decimals)} | Prob: ${probability.toFixed(2)}% (${signalType || 'N/A'})`);
                 
-                // --- 2. EVALUAR ENTRADAS DE FORMA CONCURRENTE AL CERRAR VELA ---
-                this.evaluateMarketConcurrently().catch(err => console.error('[SIMULATOR] Error en evaluación concurrente:', err));
+                // --- 2. EVALUAR ENTRADAS DE FORMA CONCURRENTE SOLO AL CERRAR VELA ---
+                if (kline.isClosed) {
+                    this.evaluateMarketConcurrently().catch(err => console.error('[SIMULATOR] Error en evaluación concurrente:', err));
+                }
             }
         }
     }
